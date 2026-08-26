@@ -76,12 +76,23 @@ and both overridden the instant you edit the field they fill:
   fully self-hosted, nothing uploaded). If it finds a plausible-looking weight,
   it pre-fills the field and marks it "Read from photo — check it's correct."
   If it doesn't find anything confident, the field just falls back to the
-  last-entry suggestion above — silently, no error. This is genuinely
-  best-effort: it does fine on printed digits (app screenshots, phone display
-  overlays) and struggles on raw 7-segment LED/LCD scale displays (glare, low
-  contrast, dashed segments are a hard case for general-purpose OCR). Turn it
-  off in Settings ("Read weight from photo") if you'd rather skip the ~6 MB
-  one-time download or don't find it useful.
+  last-entry suggestion above — silently, no error.
+
+  This was tuned against ~110 real photos (scale LCD/LED displays and
+  fitness-app screenshots), not just guessed at. The honest result: generic
+  OCR is genuinely bad at photographed 7-segment digital displays — bigger
+  Tesseract language models didn't fix it, only a tight, upright crop of the
+  display did. Rather than ship something that occasionally hands you a
+  confident-looking wrong number, the extraction is gated on Tesseract's own
+  recognition confidence — low-confidence reads are discarded instead of
+  shown, and a few rotations are tried automatically before giving up. That
+  means most raw scale photos correctly get *no* suggestion rather than a
+  wrong one; it does noticeably better on printed digits (app screenshots,
+  phone display overlays) and on photos where the display is upright and
+  fills more of the frame — the in-app **rotate button** on the photo preview
+  (when adding an entry) is the fastest way to help it along. Turn OCR off in
+  Settings ("Read weight from photo") if you'd rather skip the ~6 MB one-time
+  download or don't find it useful.
 
 ## Backup & restore
 

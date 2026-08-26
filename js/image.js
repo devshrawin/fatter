@@ -100,6 +100,50 @@
     return canvas;
   }
 
+  // Rotates an already-compressed blob by a multiple of 90°, re-encoding at
+  // the given quality. Used both for the user-facing "rotate photo" control
+  // (real photos routinely come out sideways with no usable EXIF fix — a
+  // manual override is the only reliable escape hatch) and internally by
+  // ocr.js's rotation search.
+  async function rotateBlob(blob, degrees, quality, type) {
+    const bitmap = await createImageBitmap(blob);
+    try {
+      const swap = ((degrees % 180) + 180) % 180 !== 0;
+      const w = swap ? bitmap.height : bitmap.width;
+      const h = swap ? bitmap.width : bitmap.height;
+      const canvas = makeCanvas(w, h);
+      const ctx = canvas.getContext('2d');
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate((degrees * Math.PI) / 180);
+      ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+      const outType = type || blob.type;
+      const outBlob = await canvasToBlob(canvas, outType, quality);
+      return { blob: outBlob, width: w, height: h };
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  // Rotates both the full and thumbnail blobs of a photoPayload together by
+  // the same number of degrees (must be a multiple of 90), returning a new
+  // payload shaped like compressPhoto's return value.
+  async function rotatePhotoPayload(payload, degrees) {
+    const norm = ((degrees % 360) + 360) % 360;
+    if (norm === 0) return payload;
+    const [full, thumb] = await Promise.all([
+      rotateBlob(payload.blob, norm, FULL_QUALITY, payload.type),
+      rotateBlob(payload.thumbBlob, norm, THUMB_QUALITY, payload.type),
+    ]);
+    return {
+      blob: full.blob,
+      thumbBlob: thumb.blob,
+      width: full.width,
+      height: full.height,
+      type: full.blob.type,
+      size: full.blob.size,
+    };
+  }
+
   // Main entry point: File -> { blob, thumbBlob, width, height, type, size }
   async function compressPhoto(file) {
     const loaded = await loadOriented(file);
@@ -244,5 +288,5 @@
     }
   }
 
-  global.FatterImage = { compressPhoto, createObjectUrlPool, UnsupportedImageError, readExifDateTaken };
+  global.FatterImage = { compressPhoto, createObjectUrlPool, UnsupportedImageError, readExifDateTaken, rotateBlob, rotatePhotoPayload };
 })(window);

@@ -456,7 +456,7 @@
     const unit = settings.unit;
     const suggestedKg = await suggestWeightKg(settings.smartVariation);
     const suggestedDisplay = suggestedKg != null ? fmtWeight(toDisplayWeight(suggestedKg, unit)) : '';
-    const photoUrl = URL.createObjectURL(photoPayload.blob);
+    let photoUrl = URL.createObjectURL(photoPayload.blob);
     const dateValue = suggestedDate && suggestedDate <= todayISO() ? suggestedDate : todayISO();
     const ocrPending = !!settings.ocrEnabled;
     const initialHint = ocrPending
@@ -470,7 +470,12 @@
         <div style="width:52px"></div>
       </div>
       <div class="sheet--form__body">
-        <img id="entry-photo-preview" style="width:100%;height:200px;object-fit:cover;border-radius:var(--r-card);margin-bottom:18px" alt="Selected photo">
+        <div style="position:relative;margin-bottom:18px">
+          <img id="entry-photo-preview" style="width:100%;height:200px;object-fit:cover;border-radius:var(--r-card);display:block" alt="Selected photo">
+          <button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="position:absolute;top:8px;right:8px;width:36px;height:36px;padding:0;border-radius:var(--r-pill)">
+            <svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg>
+          </button>
+        </div>
         <div class="field">
           <label class="field__label">Weight (${unit})</label>
           <input id="entry-weight" class="input input--numeric ${suggestedDisplay ? 'input--suggested' : ''}" type="number" inputmode="decimal" step="0.1" min="0" max="1000" placeholder="e.g. 70.0" value="${suggestedDisplay}">
@@ -511,6 +516,23 @@
     // select suggested text so typing overwrites it immediately
     weightInput.focus();
     weightInput.select();
+
+    const rotateBtn = el.querySelector('#entry-photo-rotate');
+    const photoPreviewImg = el.querySelector('#entry-photo-preview');
+    rotateBtn.addEventListener('click', async () => {
+      rotateBtn.disabled = true;
+      try {
+        photoPayload = await FatterImage.rotatePhotoPayload(photoPayload, 90);
+        const oldUrl = photoUrl;
+        photoUrl = URL.createObjectURL(photoPayload.blob);
+        photoPreviewImg.src = photoUrl;
+        URL.revokeObjectURL(oldUrl);
+      } catch {
+        toast('Could not rotate that photo.', { type: 'error' });
+      } finally {
+        rotateBtn.disabled = false;
+      }
+    });
 
     // Best-effort: read the number off the scale/app display in the photo.
     // Runs in the background — never blocks opening the modal, and never
@@ -568,9 +590,12 @@
         <div style="width:52px"></div>
       </div>
       <div class="sheet--form__body">
-        <div style="position:relative;margin-bottom:18px">
+        <div id="edit-photo-container" style="position:relative;margin-bottom:18px">
           ${previewUrl ? `<img id="edit-photo-preview" style="width:100%;height:200px;object-fit:cover;border-radius:var(--r-card)" alt="">` : ''}
-          <button class="btn btn--secondary btn--sm" data-act="change-photo" type="button" ${previewUrl ? 'style="position:absolute;right:10px;bottom:10px"' : ''}>Change photo</button>
+          <div style="position:absolute;right:10px;bottom:10px;display:flex;gap:8px">
+            ${previewUrl ? `<button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg></button>` : ''}
+            <button class="btn btn--secondary btn--sm" data-act="change-photo" type="button">Change photo</button>
+          </div>
         </div>
         <div class="field">
           <label class="field__label">Weight (${unit})</label>
@@ -599,6 +624,37 @@
     el.querySelector('[data-act="change-photo"]').addEventListener('click', () => {
       document.getElementById('photo-input-library').click();
     });
+    function ensureRotateButton() {
+      const container = el.querySelector('#edit-photo-container');
+      let btn = el.querySelector('#entry-photo-rotate');
+      if (!btn) {
+        btn = h(`<button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg></button>`);
+        container.querySelector('div').prepend(btn);
+        wireRotateButton(btn);
+      }
+      return btn;
+    }
+    function wireRotateButton(btn) {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const source = newPhotoPayload || existingPhoto;
+          if (!source) return;
+          const rotated = await FatterImage.rotatePhotoPayload(source, 90);
+          newPhotoPayload = rotated;
+          const url = URL.createObjectURL(rotated.blob);
+          cleanup(); previewUrl = url;
+          el.querySelector('#edit-photo-preview').src = url;
+        } catch {
+          toast('Could not rotate that photo.', { type: 'error' });
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+    const initialRotateBtn = el.querySelector('#entry-photo-rotate');
+    if (initialRotateBtn) wireRotateButton(initialRotateBtn);
+
     async function onNewPhotoPicked(e) {
       const file = e.target.files[0];
       e.target.value = '';
@@ -612,9 +668,10 @@
         let img = el.querySelector('#edit-photo-preview');
         if (!img) {
           img = h(`<img id="edit-photo-preview" style="width:100%;height:200px;object-fit:cover;border-radius:var(--r-card)" alt="">`);
-          el.querySelector('[data-act="change-photo"]').parentElement.prepend(img);
+          el.querySelector('#edit-photo-container').prepend(img);
         }
         img.src = url;
+        ensureRotateButton();
       } catch (err) {
         loading.close();
         toast(err && err.code === 'UNSUPPORTED_FORMAT' ? err.message : 'Could not process that photo.', { type: 'error', duration: 7000 });
@@ -684,7 +741,7 @@
           <div class="settings-row">
             <div>
               <div class="settings-row__label">Read weight from photo</div>
-              <div class="settings-row__desc">Tries to read the number off a scale or app display in the photo. First use downloads a ~6 MB on-device text reader, cached after that. Always a suggestion you can correct — never saved without your review.</div>
+              <div class="settings-row__desc">Tries to read the number off a scale or app display in the photo — works best when the display is upright and fills more of the frame (use the rotate button when adding a photo). Deliberately conservative: if it isn't confident, it says nothing rather than guess. First use downloads a ~6 MB on-device text reader, cached after that.</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="ocr-enabled" ${settings.ocrEnabled ? 'checked' : ''}>

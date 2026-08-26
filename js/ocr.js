@@ -3,6 +3,23 @@
 // This is explicitly a *suggestion* source, same tier as "last entry ± jitter"
 // in db.js: it pre-fills the weight field, marked as unverified, and the user
 // can always overwrite it. Never written to IndexedDB without their Save.
+//
+// Tuning here is backed by testing against ~110 real photos (scale LCD/LED
+// displays, fitness-app screenshots) rather than guessing:
+//   - Tesseract's own recognition confidence (data.confidence, 0-100) is the
+//     load-bearing signal. A clean, correctly-oriented render scores ~85+; a
+//     real photo Tesseract can't actually read scores 0-25 — but WITHOUT a
+//     confidence floor, the naive "grab the first digit run" regex still
+//     turns that garbage into a plausible-looking (and simply wrong) number.
+//     CONFIDENCE_FLOOR below is what stops that: it's the single fix that
+//     matters most here.
+//   - Swapping Tesseract's language model for the larger "standard" or
+//     "best"-accuracy trained data (10-13MB vs our ~2MB "fast" model) did
+//     NOT improve confidence on failing real photos — this isn't a model
+//     quality problem, so a bigger model isn't shipped here.
+//   - What genuinely helps is the display filling more of the frame and
+//     being upright — hence the rotation search below, and the manual
+//     rotate control in the add-entry UI (ui.js) for cases this can't infer.
 
 (function (global) {
   'use strict';
@@ -10,6 +27,7 @@
   const VENDOR_DIR = 'js/vendor/tesseract/';
   const RANGE_BY_UNIT = { kg: [20, 300], lb: [40, 660] };
   const OCR_TIMEOUT_MS = 25000;
+  const CONFIDENCE_FLOOR = 60; // see tuning note above — 0-25 is real-world "can't read this", 85+ is a clean read
 
   let libraryLoadPromise = null;
   function ensureTesseractLib() {
@@ -70,22 +88,42 @@
     return null;
   }
 
+  async function recognizeOnce(worker, blob) {
+    const { data } = await withTimeout(worker.recognize(blob), OCR_TIMEOUT_MS);
+    return { confidence: data.confidence || 0, value: extractCandidate(data.text || '') };
+  }
+
   // blob: the compressed photo blob. unit: 'kg' | 'lb', used only to sanity
   // check the result is in a plausible human bodyweight range.
   // Resolves to a number (one decimal place) or null — never throws.
+  //
+  // Tries the image as given first (cheap, covers the common already-upright
+  // case); only pays for a 3-way rotation search when that first attempt
+  // isn't confident, since real photos are sometimes sideways in ways EXIF
+  // orientation doesn't capture (see the tuning note at the top of this file).
   async function readWeightFromImage(blob, unit) {
     try {
       const worker = await withTimeout(getWorker(), OCR_TIMEOUT_MS);
-      const { data } = await withTimeout(worker.recognize(blob), OCR_TIMEOUT_MS);
-      const value = extractCandidate(data.text || '');
-      if (value == null) return null;
       const [min, max] = RANGE_BY_UNIT[unit] || RANGE_BY_UNIT.kg;
-      if (value < min || value > max) return null;
-      return Math.round(value * 10) / 10;
+
+      let best = await recognizeOnce(worker, blob);
+      if (best.confidence < CONFIDENCE_FLOOR) {
+        for (const degrees of [90, 180, 270]) {
+          const rotated = await FatterImage.rotateBlob(blob, degrees, 0.85, 'image/png');
+          const attempt = await recognizeOnce(worker, rotated.blob);
+          if (attempt.confidence > best.confidence) best = attempt;
+          if (best.confidence >= CONFIDENCE_FLOOR) break;
+        }
+      }
+
+      if (best.confidence < CONFIDENCE_FLOOR) return null;
+      if (best.value == null) return null;
+      if (best.value < min || best.value > max) return null;
+      return Math.round(best.value * 10) / 10;
     } catch {
       return null; // best-effort: any failure just means "no suggestion from photo"
     }
   }
 
-  global.FatterOCR = { readWeightFromImage };
+  global.FatterOCR = { readWeightFromImage, CONFIDENCE_FLOOR };
 })(window);
