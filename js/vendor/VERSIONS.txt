@@ -1,0 +1,24 @@
+Vendored third-party libraries — pinned versions, sources, licenses
+=====================================================================
+
+dexie.min.js
+  Version: 4.0.11
+  Source:  https://cdn.jsdelivr.net/npm/dexie@4.0.11/dist/dexie.min.js
+  License: Apache-2.0
+  Project: https://dexie.org
+
+chart.umd.min.js
+  Version: 4.4.7
+  Source:  https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js
+  License: MIT
+  Project: https://www.chartjs.org
+
+xlsx.full.min.js
+  Version: 0.18.5
+  Source:  https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
+  License: Apache-2.0
+  Project: https://sheetjs.com
+
+Pinned intentionally: bumping any of these requires re-vendoring and
+re-testing offline behavior (the service worker precaches these exact
+file names/bytes).

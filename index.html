@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fatter — Progress Tracker</title>
+<meta name="description" content="Private, offline weight and photo progress tracker. Everything stays on your device.">
+
+<meta name="theme-color" content="#0d0d0d">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+
+<!-- iOS PWA support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fatter">
+
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app" class="app">
+
+  <!-- ============ Header ============ -->
+  <header class="app-header">
+    <div class="app-header__brand">
+      <svg class="app-header__logo" viewBox="0 0 100 100" aria-hidden="true">
+        <path d="M22,86 L22,54 L46,54 L46,28 L78,28" fill="none" stroke="var(--accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="78" cy="28" r="7" fill="var(--accent)"/>
+      </svg>
+      <span class="app-header__title">Fatter</span>
+    </div>
+    <div class="app-header__status">
+      <span id="offline-pill" class="pill pill--offline" hidden>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-cloud-off"/></svg>
+        Offline
+      </span>
+    </div>
+  </header>
+
+  <!-- ============ Update banner ============ -->
+  <div id="update-banner" class="update-banner" hidden role="status">
+    <span>New version available</span>
+    <button id="update-reload-btn" class="btn btn--ghost btn--sm" type="button">Reload</button>
+  </div>
+
+  <!-- ============ Views (router targets) ============ -->
+  <main id="view-root" class="view-root" aria-live="polite">
+    <!-- populated by js/ui.js -->
+  </main>
+
+  <!-- ============ Toasts ============ -->
+  <div id="toast-root" class="toast-root" aria-live="assertive"></div>
+
+  <!-- ============ FAB (add entry) ============ -->
+  <button id="fab-add" class="fab" type="button" aria-label="Add progress entry">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus"/></svg>
+  </button>
+
+  <!-- ============ Bottom tab bar ============ -->
+  <nav class="tab-bar" aria-label="Main navigation">
+    <a class="tab-bar__item" href="#/dashboard" data-route="dashboard">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg>
+      <span>Dashboard</span>
+    </a>
+    <a class="tab-bar__item" href="#/log" data-route="log">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"/></svg>
+      <span>Log</span>
+    </a>
+    <a class="tab-bar__item" href="#/gallery" data-route="gallery">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-grid"/></svg>
+      <span>Gallery</span>
+    </a>
+    <a class="tab-bar__item" href="#/settings" data-route="settings">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-settings"/></svg>
+      <span>Settings</span>
+    </a>
+  </nav>
+
+  <!-- ============ Modal / sheet host ============ -->
+  <div id="modal-root"></div>
+
+  <!-- Hidden file inputs reused by "Add entry" -->
+  <input id="photo-input-camera" type="file" accept="image/*" capture="environment" hidden>
+  <input id="photo-input-library" type="file" accept="image/*" hidden>
+
+</div>
+
+<!-- Inline SVG icon sprite: 24x24 grid, 1.75px stroke, currentColor -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <defs>
+    <g id="icon-plus"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-camera"><path d="M4 8h3l2-3h6l2 3h3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.75"/></g>
+    <g id="icon-image"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="9" cy="10" r="1.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M4 17l5-5 3 3 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-chart"><path d="M4 20V13M12 20V8M20 20V4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-list"><path d="M4 6h16M4 12h16M4 18h11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-grid"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.75"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.75"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.75"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.75"/></g>
+    <g id="icon-settings"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/></g>
+    <g id="icon-edit"><path d="M4 20h4l10-10-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="M14 6l4 4" fill="none" stroke="currentColor" stroke-width="1.75"/></g>
+    <g id="icon-trash"><path d="M5 6h14M9 6V4h6v2M7 6l1 14h8l1-14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-download"><path d="M12 4v12M6 12l6 6 6-6M5 20h14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-upload"><path d="M12 20V8M6 12l6-6 6 6M5 4h14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-close"><path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-chevron"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-check"><path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-warning"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-cloud-off"><path d="M4.9 4.9l14.2 14.2M1 12a11 11 0 0 1 5.4-6M8.7 4.2A11 11 0 0 1 23 12a11 11 0 0 1-2.4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="icon-info"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-calendar"><rect x="4" y="5" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M4 10h16M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+    <g id="icon-share"><circle cx="18" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="18" cy="19" r="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M8.2 10.8l7.6-4.3M8.2 13.2l7.6 4.3" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g>
+  </defs>
+</svg>
+
+<script src="js/vendor/dexie.min.js"></script>
+<script src="js/vendor/chart.umd.min.js"></script>
+<script src="js/db.js"></script>
+<script src="js/image.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/export.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
