@@ -243,27 +243,56 @@
             <div class="text-tertiary" style="font-size:11px;margin-top:2px">${FatterChart.bmiCategory(bmi)}</div>
           </div>`;
         })() : ''}
+        ${(() => {
+          const streak = FatterChart.computeStreak(entries);
+          if (streak < 1) return '';
+          return `<div class="card stat-card">
+            <div class="stat-card__label">Streak</div>
+            <div class="stat-card__value" style="font-size:20px">${streak}<span class="stat-card__unit">day${streak === 1 ? '' : 's'}</span></div>
+          </div>`;
+        })()}
       </div>
       <div class="card">
-        ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto;margin-bottom:12px">
-          <button class="segmented__item is-active" data-val="weight" type="button">Weight</button>
-          <button class="segmented__item" data-val="bmi" type="button">BMI</button>
-        </div>` : ''}
+        <div class="row row--between" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto">
+            <button class="segmented__item is-active" data-val="weight" type="button">Weight</button>
+            <button class="segmented__item" data-val="bmi" type="button">BMI</button>
+          </div>` : '<div></div>'}
+          <div class="segmented" id="chart-range-toggle" style="width:auto">
+            <button class="segmented__item" data-val="7" type="button">7d</button>
+            <button class="segmented__item" data-val="30" type="button">30d</button>
+            <button class="segmented__item" data-val="90" type="button">90d</button>
+            <button class="segmented__item is-active" data-val="all" type="button">All</button>
+          </div>
+        </div>
         <div class="chart-wrap"><canvas id="progress-chart" aria-label="Weight progression chart"></canvas></div>
       </div>
       <div id="recent-strip" style="margin-top:16px"></div>`;
 
     const canvas = root.querySelector('#progress-chart');
-    FatterChart.renderChart(canvas, entries, unit);
+    let chartMetric = 'weight';
+    let chartRange = 'all';
+    function rerenderChart() {
+      const scoped = FatterChart.filterEntriesByRange(entries, chartRange === 'all' ? 'all' : Number(chartRange));
+      FatterChart.renderChart(canvas, scoped, unit, chartMetric === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
+    }
+    rerenderChart();
 
     const metricToggle = root.querySelector('#chart-metric-toggle');
     if (metricToggle) {
       metricToggle.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-val]'); if (!btn) return;
         metricToggle.querySelectorAll('.segmented__item').forEach((b) => b.classList.toggle('is-active', b === btn));
-        FatterChart.renderChart(canvas, entries, unit, btn.dataset.val === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
+        chartMetric = btn.dataset.val;
+        rerenderChart();
       });
     }
+    root.querySelector('#chart-range-toggle').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-val]'); if (!btn) return;
+      root.querySelectorAll('#chart-range-toggle .segmented__item').forEach((b) => b.classList.toggle('is-active', b === btn));
+      chartRange = btn.dataset.val;
+      rerenderChart();
+    });
 
     const recent = entries.slice(-4).reverse();
     const stripEl = root.querySelector('#recent-strip');

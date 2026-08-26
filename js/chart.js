@@ -35,6 +35,33 @@
     };
   }
 
+  // Consecutive calendar days (up to and including today) with at least one
+  // entry. Doesn't break until a full day is missed — if today has no entry
+  // yet, the streak still counts through yesterday rather than showing 0
+  // the moment the clock ticks past midnight before you've logged.
+  function computeStreak(entries) {
+    if (!entries.length) return 0;
+    const days = new Set(entries.map((e) => e.date));
+    const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const cursor = new Date();
+    if (!days.has(toISO(cursor))) cursor.setDate(cursor.getDate() - 1);
+    let streak = 0;
+    while (days.has(toISO(cursor))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  // entries: ascending by date. days: number of trailing days to keep, or
+  // 'all'. Used to scope the CHART to a recent window — the stat cards stay
+  // all-time regardless, same convention most progress-chart apps use.
+  function filterEntriesByRange(entries, days) {
+    if (days === 'all') return entries;
+    const cutoff = Date.now() - days * 86400000;
+    return entries.filter((e) => new Date(e.date + 'T00:00:00').getTime() >= cutoff);
+  }
+
   // goalKg: canonical kg or null. stats: the object computeStats returned
   // (must have .current and .avgWeeklyChange in the same display unit).
   // Returns null when there's no goal or no data yet; otherwise a
@@ -200,5 +227,5 @@
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
-  global.FatterChart = { computeStats, computeGoalProgress, computeBMI, bmiCategory, deltaDirection, renderChart };
+  global.FatterChart = { computeStats, computeGoalProgress, computeBMI, bmiCategory, computeStreak, filterEntriesByRange, deltaDirection, renderChart };
 })(window);
