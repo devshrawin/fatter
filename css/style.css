@@ -129,7 +129,10 @@ img { max-width: 100%; display: block; }
 .app-header {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; justify-content: space-between;
-  padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-4) var(--sp-3);
+  /* See .onboarding-top: env(safe-area-inset-top) is 0 on most Android
+     devices and non-notched phones, so this needs its own floor rather
+     than relying on the safe-area alone. */
+  padding: calc(max(var(--safe-top), var(--sp-5)) + var(--sp-2)) var(--sp-4) var(--sp-3);
   background: color-mix(in oklch, var(--surface) 92%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -406,7 +409,8 @@ img { max-width: 100%; display: block; }
 .sheet--form__topbar {
   flex: none;
   display: flex; align-items: center; justify-content: space-between;
-  padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-4) var(--sp-3);
+  /* See .onboarding-top: same Android/non-notched safe-area-inset-top=0 issue. */
+  padding: calc(max(var(--safe-top), var(--sp-5)) + var(--sp-2)) var(--sp-4) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
 .sheet--form__topbar-btn { background: none; border: none; color: var(--text-secondary); font-size: var(--fs-label); font-weight: 600; cursor: pointer; padding: var(--sp-1) var(--sp-2); }
@@ -421,7 +425,12 @@ img { max-width: 100%; display: block; }
 }
 .onboarding-top {
   flex: none; display: flex; justify-content: flex-end;
-  padding: calc(var(--safe-top) + var(--sp-4)) var(--sp-5) 0;
+  /* env(safe-area-inset-top) resolves to 0 on most Android devices (no
+     notch concept the same way iOS has) and on plain non-notched phones —
+     relying on it alone left the Skip row sitting right at the very top
+     of the screen there. max() guarantees real breathing room everywhere,
+     while still growing further on an actual notch/dynamic-island. */
+  padding: calc(max(var(--safe-top), var(--sp-6)) + var(--sp-3)) var(--sp-5) 0;
 }
 .onboarding-skip {
   background: none; border: none; color: var(--text-tertiary);
