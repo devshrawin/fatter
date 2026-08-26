@@ -39,6 +39,13 @@
   }
   function round1(n) { return Math.round(n * 10) / 10; }
   function fmtWeight(n) { return round1(n).toFixed(1); }
+  function fmtEta(etaDate) {
+    const days = Math.max(1, Math.round((etaDate - Date.now()) / 86400000));
+    if (days < 14) return `~${days}d`;
+    const weeks = Math.round(days / 7);
+    if (weeks < 9) return `~${weeks}w`;
+    return `~${Math.round(days / 30)}mo`;
+  }
   function todayISO() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -197,6 +204,7 @@
     }
 
     const stats = FatterChart.computeStats(entries, unit);
+    const goalProgress = FatterChart.computeGoalProgress(stats, settings.goalWeightKg, unit);
     root.innerHTML = `
       <div class="stat-grid">
         <div class="card stat-card stat-card--hero">
@@ -219,6 +227,13 @@
           <div class="stat-card__label">Entries</div>
           <div class="stat-card__value" style="font-size:20px">${stats.count}</div>
         </div>
+        ${goalProgress ? `<div class="card stat-card">
+          <div class="stat-card__label">Goal</div>
+          ${goalProgress.reached
+            ? `<div class="row" style="gap:5px;margin-top:4px;color:var(--accent);font-weight:600"><svg class="icon" style="width:16px;height:16px" viewBox="0 0 24 24"><use href="#icon-check"/></svg>Reached</div>`
+            : `<div class="stat-card__value" style="font-size:20px">${fmtWeight(goalProgress.remaining)}<span class="stat-card__unit">${unit} to go</span></div>
+               ${goalProgress.etaDate ? `<div class="text-tertiary" style="font-size:11px;margin-top:2px">${fmtEta(goalProgress.etaDate)} at this pace</div>` : ''}`}
+        </div>` : ''}
       </div>
       <div class="card">
         <div class="chart-wrap"><canvas id="progress-chart" aria-label="Weight progression chart"></canvas></div>
@@ -720,6 +735,13 @@
               <button class="segmented__item ${settings.unit === 'lb' ? 'is-active' : ''}" data-val="lb" type="button">lbs</button>
             </div>
           </div>
+          <div class="settings-row" id="btn-goal-weight" style="cursor:pointer">
+            <div class="settings-row__label">Goal weight</div>
+            <div class="row" style="gap:6px">
+              <span class="text-secondary">${settings.goalWeightKg != null ? fmtWeight(toDisplayWeight(settings.goalWeightKg, settings.unit)) + ' ' + settings.unit : 'Not set'}</span>
+              <svg class="icon" style="width:16px;height:16px;color:var(--text-tertiary)" viewBox="0 0 24 24"><use href="#icon-chevron"/></svg>
+            </div>
+          </div>
           <div class="settings-row">
             <div class="settings-row__label">Theme</div>
             <div class="segmented" id="theme-toggle" style="width:auto">
@@ -803,6 +825,34 @@
       const btn = e.target.closest('[data-val]'); if (!btn) return;
       await setSetting('unit', btn.dataset.val);
       refresh();
+    });
+    root.querySelector('#btn-goal-weight').addEventListener('click', () => {
+      const currentDisplay = settings.goalWeightKg != null ? fmtWeight(toDisplayWeight(settings.goalWeightKg, settings.unit)) : '';
+      const el = h(`<div>
+        <div class="sheet__title" style="margin-bottom:16px">Goal weight</div>
+        <div class="field">
+          <label class="field__label">Target (${settings.unit})</label>
+          <input id="goal-weight-input" class="input input--numeric" type="number" inputmode="decimal" step="0.1" min="0" max="1000" placeholder="e.g. 70.0" value="${currentDisplay}">
+        </div>
+        <div class="row" style="gap:8px;margin-top:8px">
+          ${settings.goalWeightKg != null ? '<button class="btn btn--ghost btn--block" data-act="clear" type="button">Clear goal</button>' : ''}
+          <button class="btn btn--primary btn--block" data-act="save" type="button">Save</button>
+        </div>
+      </div>`);
+      const { close } = openDialog(el);
+      const input = el.querySelector('#goal-weight-input');
+      preventWheelChange(input);
+      input.focus();
+      el.querySelector('[data-act="clear"]')?.addEventListener('click', async () => {
+        await setSetting('goalWeightKg', null);
+        close(); refresh();
+      });
+      el.querySelector('[data-act="save"]').addEventListener('click', async () => {
+        const val = parseFloat(input.value);
+        if (!val || val <= 0) { toast('Enter a valid target weight.', { type: 'error' }); return; }
+        await setSetting('goalWeightKg', fromDisplayWeight(val, settings.unit));
+        close(); refresh();
+      });
     });
     root.querySelector('#theme-toggle').addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-val]'); if (!btn) return;
