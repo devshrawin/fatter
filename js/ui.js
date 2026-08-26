@@ -433,9 +433,14 @@
     if (!file) return;
     const loading = showCompressing();
     try {
-      const payload = await FatterImage.compressPhoto(file);
+      // readExifDateTaken never throws (it resolves null on any parse issue),
+      // so pairing it with compressPhoto in Promise.all is safe.
+      const [payload, exifDate] = await Promise.all([
+        FatterImage.compressPhoto(file),
+        FatterImage.readExifDateTaken(file),
+      ]);
       loading.close();
-      openAddEntryModal(payload);
+      openAddEntryModal(payload, { suggestedDate: exifDate });
     } catch (err) {
       loading.close();
       if (err && err.code === 'UNSUPPORTED_FORMAT') {
@@ -446,12 +451,17 @@
     }
   }
 
-  async function openAddEntryModal(photoPayload) {
+  async function openAddEntryModal(photoPayload, { suggestedDate = null } = {}) {
     const [settings, latest] = await Promise.all([getSettings(), getLatestEntry()]);
     const unit = settings.unit;
     const suggestedKg = await suggestWeightKg(settings.smartVariation);
     const suggestedDisplay = suggestedKg != null ? fmtWeight(toDisplayWeight(suggestedKg, unit)) : '';
     const photoUrl = URL.createObjectURL(photoPayload.blob);
+    const dateValue = suggestedDate && suggestedDate <= todayISO() ? suggestedDate : todayISO();
+    const ocrPending = !!settings.ocrEnabled;
+    const initialHint = ocrPending
+      ? 'Reading weight from photo…'
+      : (suggestedDisplay ? 'From your last entry — type to replace' : '');
 
     const el = h(`<div>
       <div class="sheet--form__topbar">
@@ -464,11 +474,14 @@
         <div class="field">
           <label class="field__label">Weight (${unit})</label>
           <input id="entry-weight" class="input input--numeric ${suggestedDisplay ? 'input--suggested' : ''}" type="number" inputmode="decimal" step="0.1" min="0" max="1000" placeholder="e.g. 70.0" value="${suggestedDisplay}">
-          ${suggestedDisplay ? `<div id="suggested-hint" class="field__hint"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>From your last entry — type to replace</div>` : ''}
+          <div id="weight-hint" class="field__hint" ${initialHint ? '' : 'style="display:none"'}>
+            <svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg><span id="weight-hint-text">${escapeHtml(initialHint)}</span>
+          </div>
         </div>
         <div class="field">
           <label class="field__label">Date</label>
-          <input id="entry-date" class="input" type="date" value="${todayISO()}" max="${todayISO()}">
+          <input id="entry-date" class="input" type="date" value="${dateValue}" max="${todayISO()}">
+          ${suggestedDate ? `<div class="field__hint"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-calendar"/></svg>From the photo's date taken</div>` : ''}
         </div>
         <div class="field">
           <label class="field__label">Note (optional)</label>
@@ -483,18 +496,41 @@
     el.querySelector('#entry-photo-preview').src = photoUrl;
 
     const weightInput = el.querySelector('#entry-weight');
-    const hint = el.querySelector('#suggested-hint');
+    const hint = el.querySelector('#weight-hint');
+    const hintText = el.querySelector('#weight-hint-text');
+    let weightEdited = false;
     preventWheelChange(weightInput);
     weightInput.addEventListener('input', () => {
+      weightEdited = true;
       weightInput.classList.remove('input--suggested');
-      if (hint) hint.remove();
-    }, { once: true });
+      hint.style.display = 'none';
+    });
 
     function cleanup() { URL.revokeObjectURL(photoUrl); }
     const { close } = openOverlay(el, { form: true, onClose: cleanup });
     // select suggested text so typing overwrites it immediately
     weightInput.focus();
     weightInput.select();
+
+    // Best-effort: read the number off the scale/app display in the photo.
+    // Runs in the background — never blocks opening the modal, and never
+    // overwrites a value the user has already started typing.
+    if (ocrPending) {
+      FatterOCR.readWeightFromImage(photoPayload.blob, unit).then((ocrValue) => {
+        if (weightEdited) return;
+        if (ocrValue != null) {
+          weightInput.value = fmtWeight(ocrValue);
+          weightInput.classList.add('input--suggested');
+          hint.style.display = 'flex';
+          hintText.textContent = "Read from photo — check it's correct";
+        } else if (suggestedDisplay) {
+          hint.style.display = 'flex';
+          hintText.textContent = 'From your last entry — type to replace';
+        } else {
+          hint.style.display = 'none';
+        }
+      });
+    }
 
     el.querySelector('[data-act="cancel"]').addEventListener('click', close);
     el.querySelector('[data-act="save"]').addEventListener('click', async () => {
@@ -645,6 +681,16 @@
               <span class="toggle__track"><span class="toggle__thumb"></span></span>
             </label>
           </div>
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">Read weight from photo</div>
+              <div class="settings-row__desc">Tries to read the number off a scale or app display in the photo. First use downloads a ~6 MB on-device text reader, cached after that. Always a suggestion you can correct — never saved without your review.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="ocr-enabled" ${settings.ocrEnabled ? 'checked' : ''}>
+              <span class="toggle__track"><span class="toggle__thumb"></span></span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -702,6 +748,9 @@
     });
     root.querySelector('#smart-variation').addEventListener('change', async (e) => {
       await setSetting('smartVariation', e.target.checked);
+    });
+    root.querySelector('#ocr-enabled').addEventListener('change', async (e) => {
+      await setSetting('ocrEnabled', e.target.checked);
     });
 
     function setRowBusy(el, busy) {

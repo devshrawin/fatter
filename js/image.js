@@ -145,5 +145,104 @@
     };
   }
 
-  global.FatterImage = { compressPhoto, createObjectUrlPool, UnsupportedImageError };
+  // ---------------- EXIF date-taken (JPEG only, no dependency) ----------------
+  //
+  // iOS Safari transcodes HEIC to JPEG (preserving EXIF) before handing the
+  // File to the page, so this covers the common phone-camera case even though
+  // it only parses the JPEG/EXIF container. PNG screenshots and any file
+  // without a readable EXIF block simply resolve to null — the date field
+  // then falls back to today, exactly as before this feature existed.
+  const EXIF_TAG_DATETIME = 0x0132;
+  const EXIF_TAG_DATETIME_ORIGINAL = 0x9003;
+  const EXIF_TAG_SUBIFD_POINTER = 0x8769;
+  const TYPE_SIZES = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
+
+  function readAsciiString(dv, offset, count) {
+    const bytes = new Uint8Array(dv.buffer, dv.byteOffset + offset, count);
+    let end = bytes.indexOf(0);
+    if (end === -1) end = count;
+    return new TextDecoder('ascii').decode(bytes.subarray(0, end));
+  }
+
+  function readIfdDates(dv, tiffStart, ifdOffset, littleEndian, out) {
+    if (ifdOffset + 2 > dv.byteLength) return;
+    const entryCount = dv.getUint16(ifdOffset, littleEndian);
+    for (let i = 0; i < entryCount; i++) {
+      const entryOffset = ifdOffset + 2 + i * 12;
+      if (entryOffset + 12 > dv.byteLength) break;
+      const tag = dv.getUint16(entryOffset, littleEndian);
+      const type = dv.getUint16(entryOffset + 2, littleEndian);
+      const count = dv.getUint32(entryOffset + 4, littleEndian);
+      const valueFieldOffset = entryOffset + 8;
+      const typeSize = TYPE_SIZES[type] || 1;
+      const totalSize = typeSize * count;
+      const dataOffset = totalSize <= 4 ? valueFieldOffset : tiffStart + dv.getUint32(valueFieldOffset, littleEndian);
+
+      if ((tag === EXIF_TAG_DATETIME || tag === EXIF_TAG_DATETIME_ORIGINAL) && type === 2) {
+        if (dataOffset + count <= dv.byteLength) {
+          out.push(readAsciiString(dv, dataOffset, count));
+        }
+      } else if (tag === EXIF_TAG_SUBIFD_POINTER) {
+        const subIfdOffset = tiffStart + dv.getUint32(valueFieldOffset, littleEndian);
+        readIfdDates(dv, tiffStart, subIfdOffset, littleEndian, out);
+      }
+    }
+  }
+
+  // Returns 'YYYY-MM-DD' or null.
+  function exifDateStringToIso(s) {
+    const m = /^(\d{4}):(\d{2}):(\d{2})/.exec(s);
+    if (!m) return null;
+    const [, y, mo, d] = m;
+    const year = +y;
+    if (year < 1990 || year > 2200) return null; // sanity guard against garbage bytes
+    const iso = `${y}-${mo}-${d}`;
+    const parsed = new Date(iso + 'T00:00:00');
+    if (Number.isNaN(parsed.getTime())) return null;
+    if (parsed.getTime() > Date.now() + 86400000) return null; // ignore future-dated garbage
+    return iso;
+  }
+
+  async function readExifDateTaken(file) {
+    try {
+      // EXIF/APP1 segments are capped at 64KB by the JPEG marker format;
+      // reading the first 256KB comfortably covers it without loading
+      // multi-MB photos in full just to check their metadata.
+      const head = await file.slice(0, 262144).arrayBuffer();
+      const dv = new DataView(head);
+      if (dv.byteLength < 4 || dv.getUint16(0) !== 0xffd8) return null; // not a JPEG
+
+      let offset = 2;
+      while (offset + 4 <= dv.byteLength) {
+        const marker = dv.getUint16(offset);
+        if ((marker & 0xff00) !== 0xff00) break;
+        if (marker === 0xffd8 || marker === 0xffd9) { offset += 2; continue; }
+        if (marker === 0xffda) break; // start of scan — no more APPn markers follow
+        const segLength = dv.getUint16(offset + 2);
+        if (marker === 0xffe1 && offset + 4 + 6 <= dv.byteLength) {
+          const sig = readAsciiString(dv, offset + 4, 4);
+          if (sig === 'Exif') {
+            const tiffStart = offset + 4 + 6;
+            const bo = dv.getUint16(tiffStart);
+            const littleEndian = bo === 0x4949;
+            if (littleEndian || bo === 0x4d4d) {
+              const ifd0Offset = tiffStart + dv.getUint32(tiffStart + 4, littleEndian);
+              const dates = [];
+              readIfdDates(dv, tiffStart, ifd0Offset, littleEndian, dates);
+              for (const raw of dates) {
+                const iso = exifDateStringToIso(raw);
+                if (iso) return iso;
+              }
+            }
+          }
+        }
+        offset += 2 + segLength;
+      }
+      return null;
+    } catch {
+      return null; // best-effort — any parse hiccup just means "no date suggestion"
+    }
+  }
+
+  global.FatterImage = { compressPhoto, createObjectUrlPool, UnsupportedImageError, readExifDateTaken };
 })(window);

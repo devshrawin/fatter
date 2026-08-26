@@ -19,6 +19,27 @@ xlsx.full.min.js
   License: Apache-2.0
   Project: https://sheetjs.com
 
+tesseract/tesseract.min.js, tesseract/worker.min.js
+  Version: 5.1.1
+  Source:  https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/{tesseract,worker}.min.js
+  License: Apache-2.0
+  Project: https://github.com/naptha/tesseract.js
+
+tesseract/tesseract-core-simd-lstm.wasm.js
+  Version: 5.1.1 (tesseract.js-core)
+  Source:  https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm.js
+  License: Apache-2.0
+  Project: https://github.com/naptha/tesseract.js
+  Note: self-contained build (WASM embedded as base64) — no separate .wasm fetch.
+
+tesseract/eng.traineddata.gz
+  Version: 4.0.0_fast (LSTM-only, faster/smaller than the legacy 3.04 model)
+  Source:  https://tessdata.projectnaptha.com/4.0.0_fast/eng.traineddata.gz
+  License: Apache-2.0
+  Project: https://github.com/tesseract-ocr/tessdata_fast
+
 Pinned intentionally: bumping any of these requires re-vendoring and
 re-testing offline behavior (the service worker precaches these exact
-file names/bytes).
+file names/bytes; the tesseract/ files are intentionally NOT precached —
+they're lazy-loaded on first "read weight from photo" use, same as
+xlsx.full.min.js, and cached by the fetch handler after that).

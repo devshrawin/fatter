@@ -63,6 +63,26 @@ by default deliberately: this app logs your actual health data, and a
 suggested number should never be mistaken for something you measured.
 Nothing is ever saved until you tap Save, regardless of this setting.
 
+### Reading the photo itself
+
+Two more suggestions come from the photo you just picked, both on by default
+and both overridden the instant you edit the field they fill:
+
+- **Date** — if the photo has EXIF "date taken" metadata (basically any
+  camera photo), the date field defaults to that instead of today. Screenshots
+  and photos without EXIF just fall back to today, as before.
+- **Weight** — Fatter tries to read the number off a scale or app display in
+  the photo, using an on-device OCR engine ([Tesseract.js](https://github.com/naptha/tesseract.js),
+  fully self-hosted, nothing uploaded). If it finds a plausible-looking weight,
+  it pre-fills the field and marks it "Read from photo — check it's correct."
+  If it doesn't find anything confident, the field just falls back to the
+  last-entry suggestion above — silently, no error. This is genuinely
+  best-effort: it does fine on printed digits (app screenshots, phone display
+  overlays) and struggles on raw 7-segment LED/LCD scale displays (glare, low
+  contrast, dashed segments are a hard case for general-purpose OCR). Turn it
+  off in Settings ("Read weight from photo") if you'd rather skip the ~6 MB
+  one-time download or don't find it useful.
+
 ## Backup & restore
 
 - **Download Excel** (Settings) generates a real `.xlsx` with your full entry
@@ -98,14 +118,20 @@ Nothing is ever saved until you tap Save, regardless of this setting.
 
 ## Tech stack
 
-Vanilla HTML/CSS/JS, no build step, no framework. Three vendored libraries
-(pinned versions in [`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt)):
+Vanilla HTML/CSS/JS, no build step, no framework. Vendored libraries, pinned
+versions in [`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt):
 
 | Library | Version | License | Use |
 |---|---|---|---|
 | [Dexie.js](https://dexie.org) | 4.0.11 | Apache-2.0 | IndexedDB access |
 | [Chart.js](https://www.chartjs.org) | 4.4.7 | MIT | Progress line chart |
 | [SheetJS (xlsx)](https://sheetjs.com) | 0.18.5 | Apache-2.0 | Excel export |
+| [Tesseract.js](https://github.com/naptha/tesseract.js) | 5.1.1 | Apache-2.0 | On-device OCR (read weight from photo) |
+
+Tesseract.js (~6 MB with its WASM core and trained data) is lazy-loaded only
+when a photo is picked and "Read weight from photo" is on — like SheetJS, it's
+never in the initial page load, and gets cached by the service worker after
+first use.
 
 ## Project structure
 
@@ -118,11 +144,12 @@ Fatter/
 ├── js/
 │   ├── app.js           bootstrap, router, service worker, offline indicator
 │   ├── db.js            Dexie schema, CRUD, settings, backup/restore, quota handling
-│   ├── image.js         client-side compression, EXIF-orientation, HEIC handling
+│   ├── image.js         client-side compression, EXIF-orientation/date, HEIC handling
+│   ├── ocr.js            on-device weight-from-photo reading (Tesseract.js)
 │   ├── chart.js         stats + Chart.js rendering
 │   ├── export.js        Excel export + JSON backup/restore
 │   ├── ui.js             views, modals, add/edit flow, toasts
 │   └── vendor/           pinned third-party libraries
-├── icons/               placeholder PWA icons (swap in a real logo any time)
-└── tools/make-icons.js  regenerates the placeholder icons — dev-only, not shipped
+├── icons/               PWA icons (brand mark from the Claude Design handoff)
+└── tools/make-icons.js  regenerates the icons — dev-only, not shipped
 ```

@@ -37,6 +37,7 @@
     unit: 'kg',
     theme: 'system',
     smartVariation: false, // default OFF — see plan notes: never fabricate a health number by default
+    ocrEnabled: true, // best-effort read of the weight off the photo; always editable, never trusted blindly
     onboarded: false,
   };
 
