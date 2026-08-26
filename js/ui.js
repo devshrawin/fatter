@@ -181,6 +181,12 @@
 
   // ---------------- Dashboard ----------------
 
+  // Persisted across renders (module scope, not per-call) so saving/editing/
+  // deleting an entry — which re-renders the whole dashboard via refresh() —
+  // doesn't silently reset a chart view the user just picked.
+  let dashboardChartMetric = 'weight';
+  let dashboardChartRange = 'all';
+
   async function renderDashboard(root) {
     freshViewPool();
     const [settings, entries] = await Promise.all([getSettings(), getAllEntriesSorted()]);
@@ -207,6 +213,9 @@
     const stats = FatterChart.computeStats(entries, unit);
     const goalProgress = FatterChart.computeGoalProgress(stats, settings.goalWeightKg, unit);
     const nudgeMessage = FatterNudge.pickMessage(entries, settings);
+    // Height may have been cleared since the metric toggle was last set to
+    // BMI — fall back rather than rendering a BMI view with no height.
+    if (!settings.heightCm) dashboardChartMetric = 'weight';
     root.innerHTML = `
       ${nudgeMessage ? `<div class="privacy-banner" id="nudge-banner">
         <svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>
@@ -263,14 +272,14 @@
       <div class="card">
         <div class="row row--between" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
           ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto">
-            <button class="segmented__item is-active" data-val="weight" type="button">Weight</button>
-            <button class="segmented__item" data-val="bmi" type="button">BMI</button>
+            <button class="segmented__item ${dashboardChartMetric === 'weight' ? 'is-active' : ''}" data-val="weight" type="button">Weight</button>
+            <button class="segmented__item ${dashboardChartMetric === 'bmi' ? 'is-active' : ''}" data-val="bmi" type="button">BMI</button>
           </div>` : '<div></div>'}
           <div class="segmented" id="chart-range-toggle" style="width:auto">
-            <button class="segmented__item" data-val="7" type="button">7d</button>
-            <button class="segmented__item" data-val="30" type="button">30d</button>
-            <button class="segmented__item" data-val="90" type="button">90d</button>
-            <button class="segmented__item is-active" data-val="all" type="button">All</button>
+            <button class="segmented__item ${dashboardChartRange === '7' ? 'is-active' : ''}" data-val="7" type="button">7d</button>
+            <button class="segmented__item ${dashboardChartRange === '30' ? 'is-active' : ''}" data-val="30" type="button">30d</button>
+            <button class="segmented__item ${dashboardChartRange === '90' ? 'is-active' : ''}" data-val="90" type="button">90d</button>
+            <button class="segmented__item ${dashboardChartRange === 'all' ? 'is-active' : ''}" data-val="all" type="button">All</button>
           </div>
         </div>
         <div class="chart-wrap"><canvas id="progress-chart" aria-label="Weight progression chart"></canvas></div>
@@ -278,18 +287,16 @@
       <div id="recent-strip" style="margin-top:16px"></div>`;
 
     if (nudgeMessage) {
-      FatterNudge.markShownToday();
+      await FatterNudge.markShownToday();
       root.querySelector('#nudge-dismiss').addEventListener('click', () => {
         root.querySelector('#nudge-banner')?.remove();
       });
     }
 
     const canvas = root.querySelector('#progress-chart');
-    let chartMetric = 'weight';
-    let chartRange = 'all';
     function rerenderChart() {
-      const scoped = FatterChart.filterEntriesByRange(entries, chartRange === 'all' ? 'all' : Number(chartRange));
-      FatterChart.renderChart(canvas, scoped, unit, chartMetric === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
+      const scoped = FatterChart.filterEntriesByRange(entries, dashboardChartRange === 'all' ? 'all' : Number(dashboardChartRange));
+      FatterChart.renderChart(canvas, scoped, unit, dashboardChartMetric === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
     }
     rerenderChart();
 
@@ -298,14 +305,14 @@
       metricToggle.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-val]'); if (!btn) return;
         metricToggle.querySelectorAll('.segmented__item').forEach((b) => b.classList.toggle('is-active', b === btn));
-        chartMetric = btn.dataset.val;
+        dashboardChartMetric = btn.dataset.val;
         rerenderChart();
       });
     }
     root.querySelector('#chart-range-toggle').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-val]'); if (!btn) return;
       root.querySelectorAll('#chart-range-toggle .segmented__item').forEach((b) => b.classList.toggle('is-active', b === btn));
-      chartRange = btn.dataset.val;
+      dashboardChartRange = btn.dataset.val;
       rerenderChart();
     });
 
@@ -504,7 +511,6 @@
 
   function startAddEntryFlow() { openPhotoSourceSheet(); }
 
-  let compressingToastTimer = null;
   function showCompressing() {
     const el = h(`<div class="row" style="justify-content:center;padding:24px 0;gap:10px"><div class="spinner"></div><span>Preparing photo…</span></div>`);
     return openDialog(el);
@@ -697,10 +703,16 @@
       </div>
     </div>`);
     if (previewUrl) el.querySelector('#edit-photo-preview').src = previewUrl;
-    preventWheelChange(el.querySelector('#entry-weight'));
+    const weightInput = el.querySelector('#entry-weight');
+    preventWheelChange(weightInput);
 
     function cleanup() { if (previewUrl) URL.revokeObjectURL(previewUrl); }
     const { close } = openOverlay(el, { form: true, onClose: () => { cleanup(); teardownEdit(); } });
+    // openOverlay's default "first focusable" is the Cancel button (it's
+    // earlier in the DOM than the weight field) — override it, matching Add
+    // Entry's behavior, so the field a user most often changes is ready to type.
+    weightInput.focus();
+    weightInput.select();
 
     el.querySelector('[data-act="change-photo"]').addEventListener('click', () => {
       document.getElementById('photo-input-library').click();

@@ -153,8 +153,8 @@
     const nextBtn = overlay.querySelector('#onboarding-next');
     let index = 0;
 
-    function finish() {
-      FatterDB.setSetting('onboarded', true);
+    async function finish() {
+      await FatterDB.setSetting('onboarded', true);
       overlay.remove();
     }
 
@@ -197,8 +197,8 @@
     overlay.querySelector('.onboarding-skip').addEventListener('click', finish);
     nextBtn.addEventListener('click', async () => {
       const step = steps[index];
-      if (step === 'install') { await handleInstallButton(variant); finish(); return; }
-      if (step === 'privacy' && skipInstallStep) { finish(); return; }
+      if (step === 'install') { await handleInstallButton(variant); await finish(); return; }
+      if (step === 'privacy' && skipInstallStep) { await finish(); return; }
       index++;
       renderStep();
     });

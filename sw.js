@@ -7,7 +7,15 @@
 // boots offline); everything else is cache-first (static assets don't change
 // without a new cache version).
 
-const CACHE_VERSION = 'fatter-v1';
+// Bump this on every deploy that changes a precached file — it's the ONLY
+// thing that makes an existing install fetch anything new. Browsers decide
+// whether to run a new service-worker install purely by byte-diffing this
+// file, so if sw.js itself doesn't change, returning users keep whatever
+// was cached on their very first visit, forever, with no update banner ever
+// firing. (Found via audit: this sat at 'fatter-v1' through ~8 feature
+// commits that changed cached files — bumping it now is what actually
+// ships all of that to existing installs.)
+const CACHE_VERSION = 'fatter-v2';
 
 const PRECACHE_URLS = [
   './',
@@ -19,7 +27,10 @@ const PRECACHE_URLS = [
   './js/image.js',
   './js/chart.js',
   './js/export.js',
+  './js/ocr.js',
   './js/ui.js',
+  './js/onboarding.js',
+  './js/nudge.js',
   './js/vendor/dexie.min.js',
   './js/vendor/chart.umd.min.js',
   './icons/icon-192.png',
