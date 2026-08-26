@@ -6,8 +6,8 @@
 
   const { db, getSettings, setSetting, getAllEntriesSorted, getLatestEntry,
     createEntry, updateEntry, deleteEntry, getPhoto, clearAll, suggestWeightKg,
-    toDisplayWeight, fromDisplayWeight, getStorageEstimate, requestPersistence,
-    FatterError } = FatterDB;
+    toDisplayWeight, fromDisplayWeight, toDisplayHeight, fromDisplayHeight,
+    getStorageEstimate, requestPersistence, FatterError } = FatterDB;
 
   // Object URLs created while rendering the *current* view. Revoked wholesale
   // whenever a view re-renders or the route changes, so scrolling a gallery
@@ -39,6 +39,7 @@
   }
   function round1(n) { return Math.round(n * 10) / 10; }
   function fmtWeight(n) { return round1(n).toFixed(1); }
+  function fmtHeight(n) { return round1(n).toFixed(1); }
   function fmtEta(etaDate) {
     const days = Math.max(1, Math.round((etaDate - Date.now()) / 86400000));
     if (days < 14) return `~${days}d`;
@@ -234,14 +235,35 @@
             : `<div class="stat-card__value" style="font-size:20px">${fmtWeight(goalProgress.remaining)}<span class="stat-card__unit">${unit} to go</span></div>
                ${goalProgress.etaDate ? `<div class="text-tertiary" style="font-size:11px;margin-top:2px">${fmtEta(goalProgress.etaDate)} at this pace</div>` : ''}`}
         </div>` : ''}
+        ${settings.heightCm ? (() => {
+          const bmi = FatterChart.computeBMI(entries[entries.length - 1].weightKg, settings.heightCm);
+          return `<div class="card stat-card">
+            <div class="stat-card__label">BMI</div>
+            <div class="stat-card__value" style="font-size:20px">${round1(bmi).toFixed(1)}</div>
+            <div class="text-tertiary" style="font-size:11px;margin-top:2px">${FatterChart.bmiCategory(bmi)}</div>
+          </div>`;
+        })() : ''}
       </div>
       <div class="card">
+        ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto;margin-bottom:12px">
+          <button class="segmented__item is-active" data-val="weight" type="button">Weight</button>
+          <button class="segmented__item" data-val="bmi" type="button">BMI</button>
+        </div>` : ''}
         <div class="chart-wrap"><canvas id="progress-chart" aria-label="Weight progression chart"></canvas></div>
       </div>
       <div id="recent-strip" style="margin-top:16px"></div>`;
 
     const canvas = root.querySelector('#progress-chart');
     FatterChart.renderChart(canvas, entries, unit);
+
+    const metricToggle = root.querySelector('#chart-metric-toggle');
+    if (metricToggle) {
+      metricToggle.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-val]'); if (!btn) return;
+        metricToggle.querySelectorAll('.segmented__item').forEach((b) => b.classList.toggle('is-active', b === btn));
+        FatterChart.renderChart(canvas, entries, unit, btn.dataset.val === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
+      });
+    }
 
     const recent = entries.slice(-4).reverse();
     const stripEl = root.querySelector('#recent-strip');
@@ -742,6 +764,13 @@
               <svg class="icon" style="width:16px;height:16px;color:var(--text-tertiary)" viewBox="0 0 24 24"><use href="#icon-chevron"/></svg>
             </div>
           </div>
+          <div class="settings-row" id="btn-height" style="cursor:pointer">
+            <div class="settings-row__label">Height</div>
+            <div class="row" style="gap:6px">
+              <span class="text-secondary">${settings.heightCm != null ? fmtHeight(toDisplayHeight(settings.heightCm, settings.unit)) + ' ' + (settings.unit === 'lb' ? 'in' : 'cm') : 'Not set'}</span>
+              <svg class="icon" style="width:16px;height:16px;color:var(--text-tertiary)" viewBox="0 0 24 24"><use href="#icon-chevron"/></svg>
+            </div>
+          </div>
           <div class="settings-row">
             <div class="settings-row__label">Theme</div>
             <div class="segmented" id="theme-toggle" style="width:auto">
@@ -851,6 +880,36 @@
         const val = parseFloat(input.value);
         if (!val || val <= 0) { toast('Enter a valid target weight.', { type: 'error' }); return; }
         await setSetting('goalWeightKg', fromDisplayWeight(val, settings.unit));
+        close(); refresh();
+      });
+    });
+    root.querySelector('#btn-height').addEventListener('click', () => {
+      const heightUnit = settings.unit === 'lb' ? 'in' : 'cm';
+      const currentDisplay = settings.heightCm != null ? fmtHeight(toDisplayHeight(settings.heightCm, settings.unit)) : '';
+      const el = h(`<div>
+        <div class="sheet__title" style="margin-bottom:16px">Height</div>
+        <div class="field">
+          <label class="field__label">Height (${heightUnit})</label>
+          <input id="height-input" class="input input--numeric" type="number" inputmode="decimal" step="0.1" min="0" max="300" placeholder="e.g. ${heightUnit === 'cm' ? '170' : '67'}" value="${currentDisplay}">
+          <div class="field__hint"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>Used only to show your BMI — a rough measure that doesn't account for muscle, frame, or age.</div>
+        </div>
+        <div class="row" style="gap:8px;margin-top:8px">
+          ${settings.heightCm != null ? '<button class="btn btn--ghost btn--block" data-act="clear" type="button">Clear height</button>' : ''}
+          <button class="btn btn--primary btn--block" data-act="save" type="button">Save</button>
+        </div>
+      </div>`);
+      const { close } = openDialog(el);
+      const input = el.querySelector('#height-input');
+      preventWheelChange(input);
+      input.focus();
+      el.querySelector('[data-act="clear"]')?.addEventListener('click', async () => {
+        await setSetting('heightCm', null);
+        close(); refresh();
+      });
+      el.querySelector('[data-act="save"]').addEventListener('click', async () => {
+        const val = parseFloat(input.value);
+        if (!val || val <= 0) { toast('Enter a valid height.', { type: 'error' }); return; }
+        await setSetting('heightCm', fromDisplayHeight(val, settings.unit));
         close(); refresh();
       });
     });

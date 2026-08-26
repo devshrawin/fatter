@@ -31,6 +31,18 @@
     return unit === 'lb' ? lbToKg(value) : value;
   }
 
+  const CM_PER_INCH = 2.54;
+
+  // Height display follows the same unit setting as weight (cm alongside
+  // kg, inches alongside lb) — one unit toggle for the whole app, rather
+  // than a separate metric/imperial choice just for height.
+  function toDisplayHeight(cm, unit) {
+    return unit === 'lb' ? cm / CM_PER_INCH : cm;
+  }
+  function fromDisplayHeight(value, unit) {
+    return unit === 'lb' ? value * CM_PER_INCH : value;
+  }
+
   // ---------------- Settings ----------------
 
   const DEFAULT_SETTINGS = {
@@ -40,6 +52,7 @@
     ocrEnabled: true, // best-effort read of the weight off the photo; always editable, never trusted blindly
     onboarded: false,
     goalWeightKg: null, // canonical kg, like entry weights — converted at display time
+    heightCm: null, // canonical cm — powers BMI; adult height treated as constant over time
   };
 
   async function getSettings() {
@@ -213,6 +226,8 @@
     lbToKg,
     toDisplayWeight,
     fromDisplayWeight,
+    toDisplayHeight,
+    fromDisplayHeight,
     getSettings,
     setSetting,
     getLatestEntry,

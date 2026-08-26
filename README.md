@@ -94,6 +94,18 @@ and both overridden the instant you edit the field they fill:
   Settings ("Read weight from photo") if you'd rather skip the ~6 MB one-time
   download or don't find it useful.
 
+## Goal weight & BMI
+
+Both optional, both set in Settings, both entirely local:
+
+- **Goal weight** adds a stat card showing how much is left and, only when
+  your recent trend is actually heading toward it, a rough ETA. Direction-
+  neutral — it never assumes losing (or gaining) is "the" goal.
+- **Height** unlocks a BMI stat card and a Weight/BMI toggle on the
+  dashboard chart. BMI is a crude population-level measure — it ignores
+  muscle mass, frame, age, and sex — so it's shown as context (with its
+  standard WHO category label), not as something to optimize for.
+
 ## Backup & restore
 
 - **Download Excel** (Settings) generates a real `.xlsx` with your full entry

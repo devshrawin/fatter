@@ -58,6 +58,26 @@
     return { reached: false, remaining, goalDisplay, etaDate };
   }
 
+  // Adult WHO bands. BMI is a crude population-level measure — it doesn't
+  // account for muscle mass, frame, age, or sex — so this is shown as
+  // informational context, never as a target to chase.
+  const BMI_BANDS = [
+    { max: 18.5, label: 'Underweight' },
+    { max: 25, label: 'Normal' },
+    { max: 30, label: 'Overweight' },
+    { max: Infinity, label: 'Obese' },
+  ];
+
+  function computeBMI(weightKg, heightCm) {
+    if (!heightCm) return null;
+    const heightM = heightCm / 100;
+    return weightKg / (heightM * heightM);
+  }
+
+  function bmiCategory(bmi) {
+    return BMI_BANDS.find((b) => bmi < b.max).label;
+  }
+
   function deltaDirection(delta, epsilon = 0.05) {
     if (delta > epsilon) return 'up';
     if (delta < -epsilon) return 'down';
@@ -70,14 +90,17 @@
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
 
-  function renderChart(canvas, entries, unit) {
+  // opts.metric: 'weight' (default) | 'bmi'. opts.heightCm required for 'bmi'.
+  function renderChart(canvas, entries, unit, opts = {}) {
     const { toDisplayWeight } = FatterDB;
+    const metric = opts.metric === 'bmi' ? 'bmi' : 'weight';
 
     if (chartInstance) {
       chartInstance.destroy();
       chartInstance = null;
     }
     if (!canvas || !entries.length) return null;
+    if (metric === 'bmi' && !opts.heightCm) return null;
 
     const accent = readCssColor('--accent') || '#7ce88c';
     const textSecondary = readCssColor('--text-secondary') || '#a8b39a';
@@ -85,7 +108,9 @@
 
     const points = entries.map((e) => ({
       x: new Date(e.date + 'T00:00:00').getTime(),
-      y: Math.round(toDisplayWeight(e.weightKg, unit) * 10) / 10,
+      y: metric === 'bmi'
+        ? Math.round(computeBMI(e.weightKg, opts.heightCm) * 10) / 10
+        : Math.round(toDisplayWeight(e.weightKg, unit) * 10) / 10,
     }));
 
     // A linear scale has no natural tick range from a single x value (or a
@@ -145,7 +170,7 @@
           tooltip: {
             callbacks: {
               title: (items) => new Date(items[0].parsed.x).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
-              label: (item) => `${item.parsed.y} ${unit}`,
+              label: (item) => metric === 'bmi' ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}` : `${item.parsed.y} ${unit}`,
             },
           },
         },
@@ -175,5 +200,5 @@
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
-  global.FatterChart = { computeStats, computeGoalProgress, deltaDirection, renderChart };
+  global.FatterChart = { computeStats, computeGoalProgress, computeBMI, bmiCategory, deltaDirection, renderChart };
 })(window);
