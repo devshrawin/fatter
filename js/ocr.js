@@ -108,11 +108,19 @@
 
       let best = await recognizeOnce(worker, blob);
       if (best.confidence < CONFIDENCE_FLOOR) {
-        for (const degrees of [90, 180, 270]) {
-          const rotated = await FatterImage.rotateBlob(blob, degrees, 0.85, 'image/png');
-          const attempt = await recognizeOnce(worker, rotated.blob);
-          if (attempt.confidence > best.confidence) best = attempt;
-          if (best.confidence >= CONFIDENCE_FLOOR) break;
+        // Decode the source blob once and reuse the bitmap for all 3 rotation
+        // attempts — rotateBlob() decodes internally, which would otherwise
+        // mean 3 redundant createImageBitmap(blob) calls on the same source.
+        const bitmap = await FatterImage.decodeBitmap(blob);
+        try {
+          for (const degrees of [90, 180, 270]) {
+            const rotated = await FatterImage.rotateFromBitmap(bitmap, degrees, 0.85, 'image/png');
+            const attempt = await recognizeOnce(worker, rotated.blob);
+            if (attempt.confidence > best.confidence) best = attempt;
+            if (best.confidence >= CONFIDENCE_FLOOR) break;
+          }
+        } finally {
+          bitmap.close();
         }
       }
 
@@ -125,5 +133,5 @@
     }
   }
 
-  global.FatterOCR = { readWeightFromImage, CONFIDENCE_FLOOR };
+  global.FatterOCR = { readWeightFromImage };
 })(window);

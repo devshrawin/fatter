@@ -100,28 +100,40 @@
     return canvas;
   }
 
+  // Rotates an already-decoded bitmap by a multiple of 90°, re-encoding at
+  // the given quality. Does NOT close the bitmap — callers that decode once
+  // and try several rotations (ocr.js's rotation search) own that lifecycle.
+  async function rotateFromBitmap(bitmap, degrees, quality, type) {
+    const swap = ((degrees % 180) + 180) % 180 !== 0;
+    const w = swap ? bitmap.height : bitmap.width;
+    const h = swap ? bitmap.width : bitmap.height;
+    const canvas = makeCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate((degrees * Math.PI) / 180);
+    ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+    const outBlob = await canvasToBlob(canvas, type, quality);
+    return { blob: outBlob, width: w, height: h };
+  }
+
   // Rotates an already-compressed blob by a multiple of 90°, re-encoding at
-  // the given quality. Used both for the user-facing "rotate photo" control
-  // (real photos routinely come out sideways with no usable EXIF fix — a
-  // manual override is the only reliable escape hatch) and internally by
-  // ocr.js's rotation search.
+  // the given quality. Used for the user-facing "rotate photo" control —
+  // real photos routinely come out sideways with no usable EXIF fix, so a
+  // manual override is the only reliable escape hatch.
   async function rotateBlob(blob, degrees, quality, type) {
     const bitmap = await createImageBitmap(blob);
     try {
-      const swap = ((degrees % 180) + 180) % 180 !== 0;
-      const w = swap ? bitmap.height : bitmap.width;
-      const h = swap ? bitmap.width : bitmap.height;
-      const canvas = makeCanvas(w, h);
-      const ctx = canvas.getContext('2d');
-      ctx.translate(w / 2, h / 2);
-      ctx.rotate((degrees * Math.PI) / 180);
-      ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
-      const outType = type || blob.type;
-      const outBlob = await canvasToBlob(canvas, outType, quality);
-      return { blob: outBlob, width: w, height: h };
+      return await rotateFromBitmap(bitmap, degrees, quality, type || blob.type);
     } finally {
       bitmap.close();
     }
+  }
+
+  // Decodes a blob once so a caller can try multiple rotateFromBitmap() calls
+  // against it without re-decoding per attempt (ocr.js's rotation search).
+  // Caller must call bitmap.close() when done.
+  function decodeBitmap(blob) {
+    return createImageBitmap(blob);
   }
 
   // Rotates both the full and thumbnail blobs of a photoPayload together by
@@ -288,5 +300,5 @@
     }
   }
 
-  global.FatterImage = { compressPhoto, createObjectUrlPool, UnsupportedImageError, readExifDateTaken, rotateBlob, rotatePhotoPayload };
+  global.FatterImage = { compressPhoto, createObjectUrlPool, readExifDateTaken, rotateBlob, rotatePhotoPayload, decodeBitmap, rotateFromBitmap };
 })(window);

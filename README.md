@@ -16,6 +16,22 @@ had a second copy.
 The only way your data leaves the device is if *you* explicitly export it —
 as an Excel file or a JSON backup — using the buttons in Settings.
 
+## First run
+
+The first time you open Fatter (and again any time you fully clear its data),
+a short 4-step intro runs: **Welcome → How it works → Everything stays on
+your device → Add to Home Screen** (skipped if you're already running the
+installed, standalone app). "Skip" jumps straight past all of it. The install
+step adapts to your platform — a real one-tap **Install** button on
+Chrome/Android and desktop, manual step-by-step instructions on iOS Safari
+(which has no install API at all), and a generic pointer to the browser's own
+menu everywhere else. You can reopen the same install instructions any time
+from **Settings → Add to Home Screen**.
+
+**Clearing all data (Settings → Clear all data) resets `onboarded` along with
+everything else**, so the app looks and behaves like a fresh install on next
+launch, first-run intro included.
+
 ## Running locally
 
 Service workers and IndexedDB require a real HTTP origin — opening
@@ -90,7 +106,8 @@ and both overridden the instant you edit the field they fill:
   wrong one; it does noticeably better on printed digits (app screenshots,
   phone display overlays) and on photos where the display is upright and
   fills more of the frame — the in-app **rotate button** on the photo preview
-  (when adding an entry) is the fastest way to help it along. Turn OCR off in
+  (available both when adding a new entry and when editing an existing one)
+  is the fastest way to help it along. Turn OCR off in
   Settings ("Read weight from photo") if you'd rather skip the ~6 MB one-time
   download or don't find it useful.
 
@@ -163,12 +180,15 @@ versions in [`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt):
 | [Dexie.js](https://dexie.org) | 4.0.11 | Apache-2.0 | IndexedDB access |
 | [Chart.js](https://www.chartjs.org) | 4.4.7 | MIT | Progress line chart |
 | [SheetJS (xlsx)](https://sheetjs.com) | 0.18.5 | Apache-2.0 | Excel export |
-| [Tesseract.js](https://github.com/naptha/tesseract.js) | 5.1.1 | Apache-2.0 | On-device OCR (read weight from photo) |
+| [Tesseract.js](https://github.com/naptha/tesseract.js) — `tesseract.min.js`, `worker.min.js` | 5.1.1 | Apache-2.0 | On-device OCR engine + worker |
+| [tesseract.js-core](https://github.com/naptha/tesseract.js) — `tesseract-core-simd-lstm.wasm.js` | 5.1.1 | Apache-2.0 | WASM recognition core (self-contained, base64-embedded) |
+| [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) — `eng.traineddata.gz` | 4.0.0_fast | Apache-2.0 | English trained data (LSTM-only "fast" model, from a separate project/source than the tesseract.js files above) |
 
-Tesseract.js (~6 MB with its WASM core and trained data) is lazy-loaded only
-when a photo is picked and "Read weight from photo" is on — like SheetJS, it's
-never in the initial page load, and gets cached by the service worker after
-first use.
+Full pinned sources are in
+[`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt). The four Tesseract files
+(~6 MB total) are lazy-loaded only when a photo is picked and "Read weight
+from photo" is on — like SheetJS, they're never in the initial page load, and
+get cached by the service worker after first use.
 
 ## Project structure
 
@@ -186,7 +206,16 @@ Fatter/
 │   ├── chart.js         stats + Chart.js rendering
 │   ├── export.js        Excel export + JSON backup/restore
 │   ├── ui.js             views, modals, add/edit flow, toasts
+│   ├── onboarding.js     first-run intro + "Add to Home Screen" (Settings)
+│   ├── nudge.js          "haven't logged in a while" dashboard banner
 │   └── vendor/           pinned third-party libraries
-├── icons/               PWA icons (brand mark from the Claude Design handoff)
+│       ├── dexie.min.js
+│       ├── chart.umd.min.js
+│       ├── xlsx.full.min.js
+│       ├── VERSIONS.txt          pinned versions, sources, licenses
+│       └── tesseract/            OCR engine, worker, WASM core, trained data
+├── icons/               PWA icons (brand mark from the Claude Design handoff;
+│                         icons/logo.png is a gitignored local design source,
+│                         not part of the generated/shipped icon set)
 └── tools/make-icons.js  regenerates the icons — dev-only, not shipped
 ```

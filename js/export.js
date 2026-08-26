@@ -128,18 +128,21 @@
     return new Blob([bytes], { type });
   }
 
-  // Estimates payload size before doing the (potentially slow) encoding pass.
-  async function estimateBackupSize(entries) {
+  // photosById: optional Map<entryId, photo> — the Settings "Export full
+  // backup" flow calls this and buildBackup back-to-back on the same entry
+  // list, so the caller fetches every photo once and passes the map to both
+  // instead of each function re-querying IndexedDB independently.
+  async function estimateBackupSize(entries, photosById) {
     let total = 0;
     for (const e of entries) {
       if (!e.hasPhoto) continue;
-      const photo = await FatterDB.getPhoto(e.id);
+      const photo = photosById ? photosById.get(e.id) : await FatterDB.getPhoto(e.id);
       if (photo) total += (photo.blob?.size || 0) + (photo.thumbBlob?.size || 0);
     }
     return Math.round(total * 1.37); // base64 overhead
   }
 
-  async function buildBackup(entries, settings) {
+  async function buildBackup(entries, settings, photosById) {
     const out = {
       format: BACKUP_FORMAT,
       version: BACKUP_VERSION,
@@ -156,7 +159,7 @@
         updatedAt: e.updatedAt,
       };
       if (e.hasPhoto) {
-        const photo = await FatterDB.getPhoto(e.id);
+        const photo = photosById ? photosById.get(e.id) : await FatterDB.getPhoto(e.id);
         if (photo) {
           row.photo = {
             data: await blobToDataUrl(photo.blob),

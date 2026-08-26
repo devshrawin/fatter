@@ -118,16 +118,30 @@
   }
 
   // opts.metric: 'weight' (default) | 'bmi'. opts.heightCm required for 'bmi'.
+  //
+  // Updates the existing Chart instance in place (chart.update('none')) when
+  // re-rendering onto the SAME canvas — e.g. the Weight/BMI and date-range
+  // toggles both call this repeatedly on one long-lived canvas. destroy()+
+  // new Chart() on every toggle tap tears down and rebuilds the canvas
+  // context and restarts the entrance animation each time, which visibly
+  // flickers on quick successive taps. A genuinely new canvas (a full
+  // dashboard re-render after save/edit/delete) still gets a fresh instance.
   function renderChart(canvas, entries, unit, opts = {}) {
     const { toDisplayWeight } = FatterDB;
     const metric = opts.metric === 'bmi' ? 'bmi' : 'weight';
 
-    if (chartInstance) {
+    if (chartInstance && chartInstance.canvas !== canvas) {
       chartInstance.destroy();
       chartInstance = null;
     }
-    if (!canvas || !entries.length) return null;
-    if (metric === 'bmi' && !opts.heightCm) return null;
+    if (!canvas || !entries.length) {
+      if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      return null;
+    }
+    if (metric === 'bmi' && !opts.heightCm) {
+      if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      return null;
+    }
 
     const accent = readCssColor('--accent') || '#7ce88c';
     const textSecondary = readCssColor('--text-secondary') || '#a8b39a';
@@ -147,12 +161,29 @@
     const xs = points.map((p) => p.x);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const DAY = 86400000;
-    const xRange = minX === maxX ? { min: minX - 3 * DAY, max: maxX + 3 * DAY } : {};
+    const xRange = minX === maxX ? { min: minX - 3 * DAY, max: maxX + 3 * DAY } : { min: undefined, max: undefined };
 
     const ctx = canvas.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight || 220);
     gradient.addColorStop(0, hexToRgba(accent, 0.28));
     gradient.addColorStop(1, hexToRgba(accent, 0.02));
+
+    const tooltipLabel = (item) => metric === 'bmi' ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}` : `${item.parsed.y} ${unit}`;
+
+    if (chartInstance) {
+      const ds = chartInstance.data.datasets[0];
+      ds.data = points;
+      ds.borderColor = accent;
+      ds.backgroundColor = gradient;
+      ds.pointRadius = points.length > 40 ? 0 : 3;
+      ds.pointBackgroundColor = accent;
+      ds.pointBorderColor = accent;
+      chartInstance.options.scales.x.min = xRange.min;
+      chartInstance.options.scales.x.max = xRange.max;
+      chartInstance.options.plugins.tooltip.callbacks.label = tooltipLabel;
+      chartInstance.update('none'); // 'none' = no animation, so rapid toggle taps switch instantly instead of re-animating in
+      return chartInstance;
+    }
 
     chartInstance = new Chart(ctx, {
       type: 'line',
@@ -197,7 +228,7 @@
           tooltip: {
             callbacks: {
               title: (items) => new Date(items[0].parsed.x).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
-              label: (item) => metric === 'bmi' ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}` : `${item.parsed.y} ${unit}`,
+              label: tooltipLabel,
             },
           },
         },

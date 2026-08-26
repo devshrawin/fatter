@@ -7,7 +7,7 @@
   const { db, getSettings, setSetting, getAllEntriesSorted, getLatestEntry,
     createEntry, updateEntry, deleteEntry, getPhoto, clearAll, suggestWeightKg,
     toDisplayWeight, fromDisplayWeight, toDisplayHeight, fromDisplayHeight,
-    getStorageEstimate, requestPersistence, FatterError } = FatterDB;
+    getStorageEstimate, FatterError } = FatterDB;
 
   // Object URLs created while rendering the *current* view. Revoked wholesale
   // whenever a view re-renders or the route changes, so scrolling a gallery
@@ -159,6 +159,8 @@
     const { close } = openDialog(el);
     el.querySelector('[data-act="cancel"]').addEventListener('click', close);
     confirmBtn.addEventListener('click', async () => {
+      if (confirmBtn.disabled) return; // typing the word enables it; a fast double-tap right after otherwise re-runs onConfirm
+      confirmBtn.disabled = true;
       close();
       await onConfirm();
     });
@@ -175,8 +177,14 @@
         </div>
       </div>`);
     const { close } = openDialog(el);
+    const confirmBtn = el.querySelector('[data-act="confirm"]');
     el.querySelector('[data-act="cancel"]').addEventListener('click', close);
-    el.querySelector('[data-act="confirm"]').addEventListener('click', async () => { close(); await onConfirm(); });
+    confirmBtn.addEventListener('click', async () => {
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      close();
+      await onConfirm();
+    });
   }
 
   // ---------------- Dashboard ----------------
@@ -321,9 +329,11 @@
     if (recent.length) {
       stripEl.innerHTML = `<div class="timeline-month">Recent</div><div class="gallery-grid" style="grid-template-columns:repeat(4,1fr)"></div>`;
       const grid = stripEl.querySelector('.gallery-grid');
-      for (const entry of recent) {
-        grid.appendChild(await photoTile(entry));
-      }
+      // Promise.all instead of a sequential loop — each photoTile() awaits its
+      // own getPhoto(), and there's no ordering dependency between tiles.
+      // Promise.all preserves array order regardless of resolution order.
+      const tiles = await Promise.all(recent.map(photoTile));
+      tiles.forEach((tile) => grid.appendChild(tile));
     }
   }
 
@@ -357,6 +367,14 @@
 
     root.innerHTML = '';
     const desc = [...entries].reverse();
+
+    // Fetch every photo up front in parallel instead of one-at-a-time inside
+    // the render loop below — a sequential await per row serializes dozens
+    // of independent IndexedDB reads for no reason.
+    const withPhoto = desc.filter((e) => e.hasPhoto);
+    const photos = await Promise.all(withPhoto.map((e) => getPhoto(e.id)));
+    const photoById = new Map(withPhoto.map((e, i) => [e.id, photos[i]]));
+
     let lastMonth = null;
     for (let i = 0; i < desc.length; i++) {
       const entry = desc[i];
@@ -382,9 +400,9 @@
           </div>
         </div>`);
       const thumbEl = row.querySelector('.timeline-row__thumb');
-      if (entry.hasPhoto) {
-        const photo = await getPhoto(entry.id);
-        if (photo) thumbEl.innerHTML = `<img src="${viewUrlPool.get('log-' + entry.id, photo.thumbBlob)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+      const photo = entry.hasPhoto ? photoById.get(entry.id) : null;
+      if (photo) {
+        thumbEl.innerHTML = `<img src="${viewUrlPool.get('log-' + entry.id, photo.thumbBlob)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
       } else {
         thumbEl.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#icon-image"/></svg>`;
       }
@@ -405,9 +423,11 @@
     }
     root.innerHTML = '<div class="gallery-grid"></div>';
     const grid = root.querySelector('.gallery-grid');
+    // Parallel fetch — see renderLog for why (Promise.all preserves order).
+    const photos = await Promise.all(entries.map((e) => getPhoto(e.id)));
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      const photo = await getPhoto(entry.id);
+      const photo = photos[i];
       if (!photo) continue;
       const tile = h(`<div class="gallery-tile">
         <img src="${viewUrlPool.get('gal-' + entry.id, photo.thumbBlob)}" alt="Progress photo, ${fmtDate(entry.date)}" loading="lazy">
@@ -434,15 +454,18 @@
       </div>
     </div>`);
     let currentUrl = null;
+    let requestId = 0; // rapid Prev/Next fires overlapping getPhoto() calls with no ordering guarantee — only the latest request may touch shared state
     const { close } = openSheet(el, { onClose: () => { if (currentUrl) URL.revokeObjectURL(currentUrl); } });
+    const settings = await getSettings(); // unit doesn't change while the lightbox is open — fetch once, not per navigation
     async function show(n) {
       i = (n + entries.length) % entries.length;
+      const myRequest = ++requestId;
       const entry = entries[i];
       const photo = await getPhoto(entry.id);
+      if (myRequest !== requestId) return; // superseded by a later Prev/Next click while this await was pending
       if (currentUrl) URL.revokeObjectURL(currentUrl);
       currentUrl = URL.createObjectURL(photo.blob);
       el.querySelector('#lb-img').src = currentUrl;
-      const settings = await getSettings();
       el.querySelector('#lb-caption').textContent = `${fmtDate(entry.date)} · ${fmtWeight(toDisplayWeight(entry.weightKg, settings.unit))} ${settings.unit}`;
     }
     el.querySelector('[data-act="close"]').addEventListener('click', close);
@@ -476,7 +499,7 @@
     const cleanup = () => { if (photoUrl) URL.revokeObjectURL(photoUrl); };
     const { close } = openSheet(el, { onClose: cleanup });
     el.querySelector('[data-act="close"]').addEventListener('click', close);
-    el.querySelector('[data-act="edit"]').addEventListener('click', () => { close(); openEditEntry(entry); });
+    el.querySelector('[data-act="edit"]').addEventListener('click', () => { close(); openEditEntry(entry, settings); });
     el.querySelector('[data-act="delete"]').addEventListener('click', () => {
       close();
       simpleConfirm({
@@ -541,7 +564,7 @@
   async function openAddEntryModal(photoPayload, { suggestedDate = null } = {}) {
     const [settings, latest] = await Promise.all([getSettings(), getLatestEntry()]);
     const unit = settings.unit;
-    const suggestedKg = await suggestWeightKg(settings.smartVariation);
+    const suggestedKg = suggestWeightKg(latest, settings.smartVariation);
     const suggestedDisplay = suggestedKg != null ? fmtWeight(toDisplayWeight(suggestedKg, unit)) : '';
     let photoUrl = URL.createObjectURL(photoPayload.blob);
     const dateValue = suggestedDate && suggestedDate <= todayISO() ? suggestedDate : todayISO();
@@ -642,7 +665,9 @@
     }
 
     el.querySelector('[data-act="cancel"]').addEventListener('click', close);
-    el.querySelector('[data-act="save"]').addEventListener('click', async () => {
+    const saveBtn = el.querySelector('[data-act="save"]');
+    saveBtn.addEventListener('click', async () => {
+      if (saveBtn.disabled) return; // a fast double-tap fires twice before the first Save resolves — guard against duplicate entries
       const errEl = el.querySelector('#entry-error');
       const val = parseFloat(weightInput.value);
       const dateVal = el.querySelector('#entry-date').value || todayISO();
@@ -651,6 +676,7 @@
       }
       const weightKg = fromDisplayWeight(val, unit);
       const note = el.querySelector('#entry-note').value.trim();
+      saveBtn.disabled = true;
       try {
         await createEntry({ date: dateVal, weightKg, note, photoPayload }, Date.now());
         close();
@@ -659,12 +685,14 @@
       } catch (err) {
         errEl.textContent = err instanceof FatterError ? err.message : 'Could not save this entry.';
         errEl.style.display = 'block';
+        saveBtn.disabled = false;
       }
     });
   }
 
-  async function openEditEntry(entry) {
-    const settings = await getSettings();
+  // settings: caller (openEntryDetail) already has a fresh copy — reuse it
+  // instead of re-fetching, since unit can't have changed in the interim.
+  async function openEditEntry(entry, settings) {
     const unit = settings.unit;
     const existingPhoto = entry.hasPhoto ? await getPhoto(entry.id) : null;
     let newPhotoPayload = null;
@@ -714,6 +742,19 @@
     weightInput.focus();
     weightInput.select();
 
+    // A rotate and a "change photo" pick are both async and both end by
+    // overwriting newPhotoPayload/previewUrl — if a user fires both close
+    // together (tap rotate, then quickly pick a new photo before it
+    // resolves), whichever finishes last silently clobbers the other's
+    // result. A shared token makes each operation check, after its await,
+    // whether it's still the most recent one before touching shared state.
+    let photoOpToken = 0;
+    function setPhotoButtonsBusy(busy) {
+      el.querySelector('[data-act="change-photo"]').disabled = busy;
+      const rotateBtn = el.querySelector('#entry-photo-rotate');
+      if (rotateBtn) rotateBtn.disabled = busy;
+    }
+
     el.querySelector('[data-act="change-photo"]').addEventListener('click', () => {
       document.getElementById('photo-input-library').click();
     });
@@ -729,11 +770,13 @@
     }
     function wireRotateButton(btn) {
       btn.addEventListener('click', async () => {
-        btn.disabled = true;
+        const myOp = ++photoOpToken;
+        setPhotoButtonsBusy(true);
         try {
           const source = newPhotoPayload || existingPhoto;
           if (!source) return;
           const rotated = await FatterImage.rotatePhotoPayload(source, 90);
+          if (myOp !== photoOpToken) { return; } // a photo pick finished first — don't clobber it with a rotation of the old photo
           newPhotoPayload = rotated;
           const url = URL.createObjectURL(rotated.blob);
           cleanup(); previewUrl = url;
@@ -741,7 +784,7 @@
         } catch {
           toast('Could not rotate that photo.', { type: 'error' });
         } finally {
-          btn.disabled = false;
+          if (myOp === photoOpToken) setPhotoButtonsBusy(false);
         }
       });
     }
@@ -752,10 +795,14 @@
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
+      const myOp = ++photoOpToken;
+      setPhotoButtonsBusy(true);
       const loading = showCompressing();
       try {
-        newPhotoPayload = await FatterImage.compressPhoto(file);
+        const compressed = await FatterImage.compressPhoto(file);
         loading.close();
+        if (myOp !== photoOpToken) { return; } // superseded by a rotate that started after this pick
+        newPhotoPayload = compressed;
         const url = URL.createObjectURL(newPhotoPayload.blob);
         cleanup(); previewUrl = url;
         let img = el.querySelector('#edit-photo-preview');
@@ -768,24 +815,30 @@
       } catch (err) {
         loading.close();
         toast(err && err.code === 'UNSUPPORTED_FORMAT' ? err.message : 'Could not process that photo.', { type: 'error', duration: 7000 });
+      } finally {
+        if (myOp === photoOpToken) setPhotoButtonsBusy(false);
       }
     }
     global.__fatterEditPhotoHandler = onNewPhotoPicked; // wired via app.js delegated listener
 
     el.querySelector('[data-act="cancel"]').addEventListener('click', close);
-    el.querySelector('[data-act="save"]').addEventListener('click', async () => {
+    const editSaveBtn = el.querySelector('[data-act="save"]');
+    editSaveBtn.addEventListener('click', async () => {
+      if (editSaveBtn.disabled) return;
       const errEl = el.querySelector('#entry-error');
       const val = parseFloat(el.querySelector('#entry-weight').value);
       if (!val || val <= 0) { errEl.textContent = 'Enter a valid weight.'; errEl.style.display = 'block'; return; }
       const weightKg = fromDisplayWeight(val, unit);
       const dateVal = el.querySelector('#entry-date').value || entry.date;
       const note = el.querySelector('#entry-note').value.trim();
+      editSaveBtn.disabled = true;
       try {
         await updateEntry(entry.id, { date: dateVal, weightKg, note, photoPayload: newPhotoPayload }, Date.now());
         close();
         toast('Entry updated.');
         refresh();
       } catch (err) {
+        editSaveBtn.disabled = false;
         errEl.textContent = err instanceof FatterError ? err.message : 'Could not save this entry.';
         errEl.style.display = 'block';
       }
@@ -991,11 +1044,12 @@
       const btn = e.currentTarget;
       setRowBusy(btn, true);
       try {
-        const s = await getSettings();
+        // settings is already fresh here — every setting change triggers a
+        // full refresh(), which re-invokes renderSettings with a new closure.
         const entries = await getAllEntriesSorted();
         if (!entries.length) { toast('Add at least one entry before exporting.', { type: 'error' }); return; }
-        const stats = FatterChart.computeStats(entries, s.unit);
-        await FatterExport.exportExcel(entries, s.unit, stats);
+        const stats = FatterChart.computeStats(entries, settings.unit);
+        await FatterExport.exportExcel(entries, settings.unit, stats);
         toast('Excel file ready.');
       } catch (err) {
         toast(err.message || 'Could not generate the Excel file.', { type: 'error' });
@@ -1010,7 +1064,12 @@
       try {
         const entries = await getAllEntriesSorted();
         if (!entries.length) { toast('Nothing to back up yet.', { type: 'error' }); return; }
-        const estBytes = await FatterExport.estimateBackupSize(entries);
+        // Fetch every photo once and reuse it for both the size estimate and
+        // the actual backup build — previously each fetched independently.
+        const withPhoto = entries.filter((en) => en.hasPhoto);
+        const photos = await Promise.all(withPhoto.map((en) => getPhoto(en.id)));
+        const photosById = new Map(withPhoto.map((en, i) => [en.id, photos[i]]));
+        const estBytes = await FatterExport.estimateBackupSize(entries, photosById);
         if (estBytes > FatterExport.LARGE_BACKUP_WARN_BYTES) {
           const proceed = await new Promise((resolve) => {
             simpleConfirm({
@@ -1022,8 +1081,7 @@
           });
           if (!proceed) return;
         }
-        const s = await getSettings();
-        const backup = await FatterExport.buildBackup(entries, s);
+        const backup = await FatterExport.buildBackup(entries, settings, photosById);
         FatterExport.downloadJson(backup, `fatter-backup-${FatterExport.todayStamp()}.json`);
         toast('Backup downloaded.');
       } catch (err) {
@@ -1067,7 +1125,10 @@
 
   function openImportSummary(obj) {
     const dates = obj.entries.map((e) => e.date).sort();
-    const range = dates.length ? `${dates[0]} to ${dates[dates.length - 1]}` : '—';
+    // Dates come straight from an untrusted backup file (validateBackup only
+    // checks format/version/that entries is an array) — escape before this
+    // reaches innerHTML, same as every other user-controlled string in this file.
+    const range = dates.length ? `${escapeHtml(dates[0])} to ${escapeHtml(dates[dates.length - 1])}` : '—';
     const el = h(`<div>
       <div class="sheet__title" style="margin-bottom:8px">Import backup</div>
       <p class="text-secondary" style="margin-top:0">${obj.entries.length} entries · ${range}</p>
@@ -1078,8 +1139,11 @@
       </div>
     </div>`);
     const { close } = openSheet(el);
+    let handled = false;
     el.querySelector('[data-act="cancel"]').addEventListener('click', close);
     el.querySelector('[data-act="merge"]').addEventListener('click', async () => {
+      if (handled) return; // a fast double-tap otherwise imports the whole backup twice
+      handled = true;
       close();
       await FatterExport.restoreBackup(obj, 'merge');
       toast('Backup merged.');
@@ -1119,6 +1183,6 @@
 
   global.FatterUI = {
     renderDashboard, renderLog, renderGallery, renderSettings,
-    initGlobalHandlers, toast, closeModal, openSheet,
+    initGlobalHandlers, openSheet,
   };
 })(window);

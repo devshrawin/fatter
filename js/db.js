@@ -169,8 +169,10 @@
   // ---------------- Weight suggestion ----------------
 
   // Returns a kg value (or null) to pre-fill the Add Entry weight field.
-  async function suggestWeightKg(smartVariation) {
-    const latest = await getLatestEntry();
+  // Takes the latest entry directly (rather than fetching it itself) so a
+  // caller that already needs getLatestEntry() for other reasons doesn't
+  // pay for a second identical table scan just to get a suggestion.
+  function suggestWeightKg(latest, smartVariation) {
     if (!latest) return null;
     if (!smartVariation) return latest.weightKg;
     // ±0.2–0.5 kg jitter, deterministic sign spread via Math.random (fine —
@@ -222,9 +224,6 @@
 
   global.FatterDB = {
     db,
-    KG_PER_LB,
-    kgToLb,
-    lbToKg,
     toDisplayWeight,
     fromDisplayWeight,
     toDisplayHeight,
