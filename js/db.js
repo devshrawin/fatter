@@ -53,6 +53,7 @@
     onboarded: false,
     goalWeightKg: null, // canonical kg, like entry weights — converted at display time
     heightCm: null, // canonical cm — powers BMI; adult height treated as constant over time
+    lastNudgeShownDate: null, // caps the "log today?" banner at once per calendar day
   };
 
   async function getSettings() {

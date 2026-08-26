@@ -106,6 +106,20 @@ Both optional, both set in Settings, both entirely local:
   muscle mass, frame, age, and sex — so it's shown as context (with its
   standard WHO category label), not as something to optimize for.
 
+## Streaks, chart range, and reminders
+
+- A **streak** stat card appears once you've logged at least one day —
+  consecutive calendar days with an entry, not reset by a day that just
+  hasn't happened yet.
+- The dashboard chart has a **7d / 30d / 90d / All** toggle. It only scopes
+  the chart — the stat cards stay all-time, so a zoomed-in chart view can't
+  make your starting weight look like it moved.
+- If it's been a few days since your last entry, the dashboard shows a
+  small dismissible reminder (one of ~15 rotating messages, at most once a
+  day). This is **not a push notification** — Fatter has no server to send
+  one from, so it only ever appears while you actually have the app open,
+  the same way the rest of the app works.
+
 ## Backup & restore
 
 - **Download Excel** (Settings) generates a real `.xlsx` with your full entry

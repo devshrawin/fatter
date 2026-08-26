@@ -206,7 +206,15 @@
 
     const stats = FatterChart.computeStats(entries, unit);
     const goalProgress = FatterChart.computeGoalProgress(stats, settings.goalWeightKg, unit);
+    const nudgeMessage = FatterNudge.pickMessage(entries, settings);
     root.innerHTML = `
+      ${nudgeMessage ? `<div class="privacy-banner" id="nudge-banner">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>
+        <div style="flex:1">${escapeHtml(nudgeMessage)}</div>
+        <button id="nudge-dismiss" type="button" aria-label="Dismiss" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;padding:0;flex:none">
+          <svg class="icon" style="width:16px;height:16px" viewBox="0 0 24 24"><use href="#icon-close"/></svg>
+        </button>
+      </div>` : ''}
       <div class="stat-grid">
         <div class="card stat-card stat-card--hero">
           <div class="stat-card__label">Current</div>
@@ -268,6 +276,13 @@
         <div class="chart-wrap"><canvas id="progress-chart" aria-label="Weight progression chart"></canvas></div>
       </div>
       <div id="recent-strip" style="margin-top:16px"></div>`;
+
+    if (nudgeMessage) {
+      FatterNudge.markShownToday();
+      root.querySelector('#nudge-dismiss').addEventListener('click', () => {
+        root.querySelector('#nudge-banner')?.remove();
+      });
+    }
 
     const canvas = root.querySelector('#progress-chart');
     let chartMetric = 'weight';
