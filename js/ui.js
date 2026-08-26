@@ -162,11 +162,18 @@
       if (confirmBtn.disabled) return; // typing the word enables it; a fast double-tap right after otherwise re-runs onConfirm
       confirmBtn.disabled = true;
       close();
-      await onConfirm();
+      try {
+        await onConfirm();
+      } catch (err) {
+        // onConfirm used to run unguarded — a rejection (e.g. clearAll()
+        // hitting a quota/transaction error) vanished silently with no
+        // feedback at all, since the dialog was already closed.
+        toast(err instanceof FatterError ? err.message : 'Something went wrong. Please try again.', { type: 'error' });
+      }
     });
   }
 
-  function simpleConfirm({ title, body, confirmLabel = 'Delete', destructive = true, onConfirm }) {
+  function simpleConfirm({ title, body, confirmLabel = 'Delete', destructive = true, onConfirm, onCancel }) {
     const el = h(`
       <div>
         <div class="sheet__title" style="margin-bottom:8px">${escapeHtml(title)}</div>
@@ -178,12 +185,19 @@
       </div>`);
     const { close } = openDialog(el);
     const confirmBtn = el.querySelector('[data-act="confirm"]');
-    el.querySelector('[data-act="cancel"]').addEventListener('click', close);
+    // onCancel fires synchronously (not awaited) — Cancel should feel instant,
+    // and callers using it to resolve a pending Promise (see the "large
+    // backup" confirmation) need it to run even though nothing here awaits it.
+    el.querySelector('[data-act="cancel"]').addEventListener('click', () => { close(); if (onCancel) onCancel(); });
     confirmBtn.addEventListener('click', async () => {
       if (confirmBtn.disabled) return;
       confirmBtn.disabled = true;
       close();
-      await onConfirm();
+      try {
+        await onConfirm();
+      } catch (err) {
+        toast(err instanceof FatterError ? err.message : 'Something went wrong. Please try again.', { type: 'error' });
+      }
     });
   }
 
@@ -228,7 +242,7 @@
       ${nudgeMessage ? `<div class="privacy-banner" id="nudge-banner">
         <svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>
         <div style="flex:1">${escapeHtml(nudgeMessage)}</div>
-        <button id="nudge-dismiss" type="button" aria-label="Dismiss" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;padding:0;flex:none">
+        <button id="nudge-dismiss" type="button" aria-label="Dismiss" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;padding:14px;margin:-14px;flex:none">
           <svg class="icon" style="width:16px;height:16px" viewBox="0 0 24 24"><use href="#icon-close"/></svg>
         </button>
       </div>` : ''}
@@ -290,7 +304,10 @@
             <button class="segmented__item ${dashboardChartRange === 'all' ? 'is-active' : ''}" data-val="all" type="button">All</button>
           </div>
         </div>
-        <div class="chart-wrap"><canvas id="progress-chart" aria-label="Weight progression chart"></canvas></div>
+        <div class="chart-wrap" id="chart-wrap">
+          <canvas id="progress-chart" aria-label="Weight progression chart"></canvas>
+          <div id="chart-empty" class="text-tertiary" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:0 24px">No entries in this range.</div>
+        </div>
       </div>
       <div id="recent-strip" style="margin-top:16px"></div>`;
 
@@ -302,8 +319,14 @@
     }
 
     const canvas = root.querySelector('#progress-chart');
+    const chartEmpty = root.querySelector('#chart-empty');
     function rerenderChart() {
       const scoped = FatterChart.filterEntriesByRange(entries, dashboardChartRange === 'all' ? 'all' : Number(dashboardChartRange));
+      // filterEntriesByRange can legitimately return nothing (e.g. "7d" picked
+      // after a week-plus gap in logging) even though there ARE entries
+      // overall — without this, the chart area just goes blank with no
+      // explanation of why.
+      chartEmpty.style.display = scoped.length ? 'none' : 'flex';
       FatterChart.renderChart(canvas, scoped, unit, dashboardChartMetric === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
     }
     rerenderChart();
@@ -445,7 +468,7 @@
         <div id="lb-caption" class="text-secondary"></div>
         <button class="sheet__close" data-act="close" type="button" aria-label="Close"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-close"/></svg></button>
       </div>
-      <div style="border-radius:var(--r-lg);overflow:hidden;background:var(--surface-sunken)">
+      <div style="border-radius:var(--r-card);overflow:hidden;background:var(--surface-sunken)">
         <img id="lb-img" style="width:100%;display:block" alt="">
       </div>
       <div class="row" style="justify-content:center;gap:16px;margin-top:12px">
@@ -487,7 +510,7 @@
         <div class="sheet__title">${fmtDate(entry.date)}</div>
         <button class="sheet__close" data-act="close" type="button" aria-label="Close"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-close"/></svg></button>
       </div>
-      ${photo ? `<img id="detail-photo" style="width:100%;border-radius:var(--r-lg);margin-bottom:12px" alt="">` : ''}
+      ${photo ? `<img id="detail-photo" style="width:100%;border-radius:var(--r-card);margin-bottom:12px" alt="">` : ''}
       <div class="stat-card__value" style="margin-bottom:4px">${fmtWeight(toDisplayWeight(entry.weightKg, settings.unit))}<span class="stat-card__unit">${settings.unit}</span></div>
       ${entry.note ? `<p class="text-secondary">${escapeHtml(entry.note)}</p>` : ''}
       <div class="row" style="gap:8px;margin-top:16px">
@@ -534,9 +557,24 @@
 
   function startAddEntryFlow() { openPhotoSourceSheet(); }
 
+  // Deliberately bypasses openOverlay/openDialog — those call closeModal()
+  // first thing, which would silently close an Add/Edit Entry sheet still
+  // open behind this spinner (e.g. Edit Entry's "Change photo" picks a file
+  // while the edit sheet is up; this needs to show ON TOP of it, not evict
+  // it — that eviction was a real bug: the edit sheet vanished mid-flow and
+  // whatever was typed got lost). Manages its own overlay element instead.
   function showCompressing() {
-    const el = h(`<div class="row" style="justify-content:center;padding:24px 0;gap:10px"><div class="spinner"></div><span>Preparing photo…</span></div>`);
-    return openDialog(el);
+    const overlay = h(`<div class="modal-overlay" role="status" aria-live="polite">
+      <div class="modal-dialog"><div class="row" style="justify-content:center;padding:24px 0;gap:10px"><div class="spinner"></div><span>Preparing photo…</span></div></div>
+    </div>`);
+    document.getElementById('modal-root').appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('is-open'));
+    return {
+      close: () => {
+        overlay.classList.remove('is-open');
+        setTimeout(() => overlay.remove(), 260);
+      },
+    };
   }
 
   async function handlePickedFile(file) {
@@ -671,7 +709,7 @@
       const errEl = el.querySelector('#entry-error');
       const val = parseFloat(weightInput.value);
       const dateVal = el.querySelector('#entry-date').value || todayISO();
-      if (!val || val <= 0) {
+      if (!val || val <= 0 || val > parseFloat(weightInput.max)) {
         errEl.textContent = 'Enter a valid weight.'; errEl.style.display = 'block'; return;
       }
       const weightKg = fromDisplayWeight(val, unit);
@@ -697,6 +735,7 @@
     const existingPhoto = entry.hasPhoto ? await getPhoto(entry.id) : null;
     let newPhotoPayload = null;
     let previewUrl = existingPhoto ? URL.createObjectURL(existingPhoto.blob) : null;
+    let photoRemoved = false;
 
     const el = h(`<div>
       <div class="sheet--form__topbar">
@@ -708,7 +747,8 @@
         <div id="edit-photo-container" style="position:relative;margin-bottom:18px">
           ${previewUrl ? `<img id="edit-photo-preview" style="width:100%;height:200px;object-fit:cover;border-radius:var(--r-card)" alt="">` : ''}
           <div style="position:absolute;right:10px;bottom:10px;display:flex;gap:8px">
-            ${previewUrl ? `<button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg></button>` : ''}
+            ${previewUrl ? `<button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg></button>
+            <button id="entry-photo-remove" class="btn btn--secondary btn--sm" type="button" aria-label="Remove photo" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-trash"/></svg></button>` : ''}
             <button class="btn btn--secondary btn--sm" data-act="change-photo" type="button">Change photo</button>
           </div>
         </div>
@@ -753,20 +793,28 @@
       el.querySelector('[data-act="change-photo"]').disabled = busy;
       const rotateBtn = el.querySelector('#entry-photo-rotate');
       if (rotateBtn) rotateBtn.disabled = busy;
+      const removeBtn = el.querySelector('#entry-photo-remove');
+      if (removeBtn) removeBtn.disabled = busy;
     }
 
     el.querySelector('[data-act="change-photo"]').addEventListener('click', () => {
       document.getElementById('photo-input-library').click();
     });
-    function ensureRotateButton() {
-      const container = el.querySelector('#edit-photo-container');
-      let btn = el.querySelector('#entry-photo-rotate');
-      if (!btn) {
-        btn = h(`<button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg></button>`);
-        container.querySelector('div').prepend(btn);
-        wireRotateButton(btn);
+    // Ensures both the rotate and remove buttons exist — needed after
+    // Remove-photo has torn them down and the user then picks a new photo.
+    function ensurePhotoActionButtons() {
+      const btnRow = el.querySelector('#edit-photo-container > div');
+      let rotateBtn = el.querySelector('#entry-photo-rotate');
+      if (!rotateBtn) {
+        rotateBtn = h(`<button id="entry-photo-rotate" class="btn btn--secondary btn--sm" type="button" aria-label="Rotate photo 90 degrees" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-rotate"/></svg></button>`);
+        btnRow.prepend(rotateBtn);
+        wireRotateButton(rotateBtn);
       }
-      return btn;
+      if (!el.querySelector('#entry-photo-remove')) {
+        const removeBtn = h(`<button id="entry-photo-remove" class="btn btn--secondary btn--sm" type="button" aria-label="Remove photo" style="width:36px;height:36px;padding:0;border-radius:var(--r-pill)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-trash"/></svg></button>`);
+        rotateBtn.after(removeBtn);
+        wireRemoveButton(removeBtn);
+      }
     }
     function wireRotateButton(btn) {
       btn.addEventListener('click', async () => {
@@ -788,8 +836,24 @@
         }
       });
     }
+    // Synchronous, but still bumps the token to invalidate any in-flight
+    // rotate/pick so it can't silently resurrect a photo the user just removed.
+    function wireRemoveButton(btn) {
+      btn.addEventListener('click', () => {
+        ++photoOpToken;
+        cleanup();
+        previewUrl = null;
+        newPhotoPayload = null;
+        photoRemoved = true;
+        el.querySelector('#edit-photo-preview')?.remove();
+        el.querySelector('#entry-photo-rotate')?.remove();
+        el.querySelector('#entry-photo-remove')?.remove();
+      });
+    }
     const initialRotateBtn = el.querySelector('#entry-photo-rotate');
     if (initialRotateBtn) wireRotateButton(initialRotateBtn);
+    const initialRemoveBtn = el.querySelector('#entry-photo-remove');
+    if (initialRemoveBtn) wireRemoveButton(initialRemoveBtn);
 
     async function onNewPhotoPicked(e) {
       const file = e.target.files[0];
@@ -803,6 +867,7 @@
         loading.close();
         if (myOp !== photoOpToken) { return; } // superseded by a rotate that started after this pick
         newPhotoPayload = compressed;
+        photoRemoved = false; // picking a new photo un-does a prior Remove-photo
         const url = URL.createObjectURL(newPhotoPayload.blob);
         cleanup(); previewUrl = url;
         let img = el.querySelector('#edit-photo-preview');
@@ -811,7 +876,7 @@
           el.querySelector('#edit-photo-container').prepend(img);
         }
         img.src = url;
-        ensureRotateButton();
+        ensurePhotoActionButtons();
       } catch (err) {
         loading.close();
         toast(err && err.code === 'UNSUPPORTED_FORMAT' ? err.message : 'Could not process that photo.', { type: 'error', duration: 7000 });
@@ -826,14 +891,15 @@
     editSaveBtn.addEventListener('click', async () => {
       if (editSaveBtn.disabled) return;
       const errEl = el.querySelector('#entry-error');
-      const val = parseFloat(el.querySelector('#entry-weight').value);
-      if (!val || val <= 0) { errEl.textContent = 'Enter a valid weight.'; errEl.style.display = 'block'; return; }
+      const weightField = el.querySelector('#entry-weight');
+      const val = parseFloat(weightField.value);
+      if (!val || val <= 0 || val > parseFloat(weightField.max)) { errEl.textContent = 'Enter a valid weight.'; errEl.style.display = 'block'; return; }
       const weightKg = fromDisplayWeight(val, unit);
       const dateVal = el.querySelector('#entry-date').value || entry.date;
       const note = el.querySelector('#entry-note').value.trim();
       editSaveBtn.disabled = true;
       try {
-        await updateEntry(entry.id, { date: dateVal, weightKg, note, photoPayload: newPhotoPayload }, Date.now());
+        await updateEntry(entry.id, { date: dateVal, weightKg, note, photoPayload: newPhotoPayload, removePhoto: photoRemoved && !newPhotoPayload }, Date.now());
         close();
         toast('Entry updated.');
         refresh();
@@ -987,7 +1053,7 @@
       });
       el.querySelector('[data-act="save"]').addEventListener('click', async () => {
         const val = parseFloat(input.value);
-        if (!val || val <= 0) { toast('Enter a valid target weight.', { type: 'error' }); return; }
+        if (!val || val <= 0 || val > parseFloat(input.max)) { toast('Enter a valid target weight.', { type: 'error' }); return; }
         await setSetting('goalWeightKg', fromDisplayWeight(val, settings.unit));
         close(); refresh();
       });
@@ -1017,7 +1083,7 @@
       });
       el.querySelector('[data-act="save"]').addEventListener('click', async () => {
         const val = parseFloat(input.value);
-        if (!val || val <= 0) { toast('Enter a valid height.', { type: 'error' }); return; }
+        if (!val || val <= 0 || val > parseFloat(input.max)) { toast('Enter a valid height.', { type: 'error' }); return; }
         await setSetting('heightCm', fromDisplayHeight(val, settings.unit));
         close(); refresh();
       });
@@ -1077,6 +1143,7 @@
               body: `This backup will be roughly ${(estBytes / (1024 * 1024)).toFixed(0)} MB. Continue?`,
               confirmLabel: 'Continue', destructive: false,
               onConfirm: () => resolve(true),
+              onCancel: () => resolve(false), // previously unset — Cancel never resolved this Promise, leaving the Export row disabled forever
             });
           });
           if (!proceed) return;
@@ -1145,9 +1212,16 @@
       if (handled) return; // a fast double-tap otherwise imports the whole backup twice
       handled = true;
       close();
-      await FatterExport.restoreBackup(obj, 'merge');
-      toast('Backup merged.');
-      refresh();
+      try {
+        await FatterExport.restoreBackup(obj, 'merge');
+        toast('Backup merged.');
+        refresh();
+      } catch (err) {
+        // restoreBackup can throw (e.g. a corrupted/hand-edited photo.data
+        // field failing atob()) — this used to fail with no toast at all,
+        // the sheet already closed, so the user saw nothing happen.
+        toast('Could not import that backup — the file may be corrupted.', { type: 'error' });
+      }
     });
     el.querySelector('[data-act="replace"]').addEventListener('click', () => {
       close();
@@ -1157,10 +1231,14 @@
         requiredWord: 'REPLACE',
         confirmLabel: 'Replace data',
         onConfirm: async () => {
-          await FatterExport.restoreBackup(obj, 'replace');
-          toast('Backup restored.');
-          location.hash = '#/dashboard';
-          refresh();
+          try {
+            await FatterExport.restoreBackup(obj, 'replace');
+            toast('Backup restored.');
+            location.hash = '#/dashboard';
+            refresh();
+          } catch (err) {
+            toast('Could not import that backup — the file may be corrupted.', { type: 'error' });
+          }
         },
       });
     });

@@ -300,5 +300,5 @@
     }
   }
 
-  global.FatterImage = { compressPhoto, createObjectUrlPool, readExifDateTaken, rotateBlob, rotatePhotoPayload, decodeBitmap, rotateFromBitmap };
+  global.FatterImage = { compressPhoto, createObjectUrlPool, readExifDateTaken, rotatePhotoPayload, decodeBitmap, rotateFromBitmap };
 })(window);

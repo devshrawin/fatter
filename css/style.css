@@ -26,7 +26,7 @@
 
   /* ---- spacing (4px base) ---- */
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
-  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 40px; --sp-9: 48px; --sp-10: 64px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 40px; --sp-9: 48px;
 
   /* ---- radius: controls 10 · cards 16–20 · pills 999 ---- */
   --r-control: 10px; --r-card: 16px; --r-card-lg: 20px; --r-pill: 999px;
@@ -119,6 +119,7 @@ img { max-width: 100%; display: block; }
 /* ============ App shell ============ */
 .app {
   min-height: 100vh;
+  min-height: 100dvh; /* dvh shrinks with mobile browser chrome/keyboard; vh above is the fallback for browsers without dvh support */
   display: flex;
   flex-direction: column;
 }
@@ -366,7 +367,7 @@ img { max-width: 100%; display: block; }
   background: var(--surface-raised);
   border-radius: var(--r-card-lg) var(--r-card-lg) 0 0;
   padding: var(--sp-4) var(--sp-4) calc(var(--sp-5) + var(--safe-bottom));
-  max-height: 92vh; overflow-y: auto;
+  max-height: 92vh; max-height: 92dvh; overflow-y: auto;
   transform: translateY(100%);
   transition: transform var(--dur-sheet) var(--ease-sheet);
   box-shadow: var(--elev-2);
@@ -375,7 +376,7 @@ img { max-width: 100%; display: block; }
 .sheet__handle { width: 36px; height: 4px; border-radius: var(--r-pill); background: var(--border); margin: 0 auto var(--sp-4); }
 .sheet__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-4); }
 .sheet__title { font-size: 16px; font-weight: 700; }
-.sheet__close { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: var(--sp-1); border-radius: var(--r-control); }
+.sheet__close { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: var(--sp-3); margin: calc(var(--sp-3) * -1); border-radius: var(--r-control); }
 
 .modal-dialog {
   width: calc(100% - var(--sp-6)); max-width: 400px;
@@ -397,6 +398,7 @@ img { max-width: 100%; display: block; }
   border-radius: var(--r-card-lg) var(--r-card-lg) 0 0;
   height: 100%;
   max-height: 100vh;
+  max-height: 100dvh; /* shrinks with the on-screen keyboard so the footer's Save button stays above it, instead of being pinned under a keyboard-sized layout viewport */
   display: flex; flex-direction: column;
   padding: 0;
 }

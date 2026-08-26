@@ -30,10 +30,25 @@
     }
   }
 
+  // Tracks the last theme setting passed in, so the OS-scheme-change listener
+  // below (for theme === 'system') knows whether it should still be reacting.
+  let currentThemeSetting = 'system';
+
   function applyTheme(theme) {
+    currentThemeSetting = theme;
     const root = document.documentElement;
     if (theme === 'dark' || theme === 'light') root.dataset.theme = theme;
     else delete root.dataset.theme;
+
+    // These two meta tags were hardcoded for the dark theme and never updated
+    // — switching to Light left the iOS status bar glyphs (black-translucent
+    // draws them white) invisible against the now-light content behind them,
+    // and the Android address-bar tint stayed black against a white page.
+    const isDark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) themeColorMeta.setAttribute('content', isDark ? '#0d0d0d' : '#fcfcfc');
+    const statusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if (statusBarMeta) statusBarMeta.setAttribute('content', isDark ? 'black-translucent' : 'default');
   }
 
   // ---------------- Offline indicator ----------------
@@ -114,6 +129,13 @@
 
     if (!location.hash) location.hash = `#/${DEFAULT_ROUTE}`;
     await renderRoute();
+
+    // Only relevant while the setting is 'system' — applyTheme() itself
+    // re-checks matchMedia every call, this just re-triggers it when the OS
+    // flips light/dark out from under an already-open tab.
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (currentThemeSetting === 'system') applyTheme('system');
+    });
 
     FatterOnboarding.maybeShow(settings);
 

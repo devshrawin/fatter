@@ -12,10 +12,13 @@
 // whether to run a new service-worker install purely by byte-diffing this
 // file, so if sw.js itself doesn't change, returning users keep whatever
 // was cached on their very first visit, forever, with no update banner ever
-// firing. (Found via audit: this sat at 'fatter-v1' through ~8 feature
-// commits that changed cached files — bumping it now is what actually
-// ships all of that to existing installs.)
-const CACHE_VERSION = 'fatter-v2';
+// firing. (This bit twice now: it sat at 'fatter-v1' through ~8 feature
+// commits before the first bump, then a whole second round of fixes to
+// chart.js/ui.js/export.js/image.js/ocr.js/style.css/index.html shipped
+// without a bump — existing installs kept running the pre-fix code the
+// entire time. Bump this EVERY time any precached file changes, no
+// exceptions, even for a "small" fix.)
+const CACHE_VERSION = 'fatter-v3';
 
 const PRECACHE_URLS = [
   './',
@@ -37,6 +40,7 @@ const PRECACHE_URLS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon-180.png',
+  './icons/favicon-16.png',
   './icons/favicon-32.png',
   './icons/favicon.svg',
 ];

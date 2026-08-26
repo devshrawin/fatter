@@ -73,7 +73,15 @@
     const goalDisplay = FatterDB.toDisplayWeight(goalKg, unit);
     const diff = goalDisplay - stats.current; // signed: >0 means current is below goal
     const remaining = Math.round(Math.abs(diff) * 10) / 10;
-    if (remaining < 0.1) return { reached: true, goalDisplay };
+
+    // Direction (losing vs gaining toward the goal) is inferred from where
+    // the goal sits relative to the starting weight. Without this, someone
+    // who overshoots — e.g. keeps losing past a weight-loss goal — would see
+    // "X kg to go" grow forever instead of "Reached", since diff crosses
+    // zero and its magnitude starts climbing again on the other side.
+    const losingTowardGoal = goalDisplay <= stats.start;
+    const overshot = losingTowardGoal ? diff > 0 : diff < 0;
+    if (remaining < 0.1 || overshot) return { reached: true, goalDisplay };
 
     const epsilon = 0.02;
     const headingTowardGoal = (diff > 0 && stats.avgWeeklyChange > epsilon) || (diff < 0 && stats.avgWeeklyChange < -epsilon);

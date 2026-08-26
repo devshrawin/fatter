@@ -180,10 +180,25 @@
     downloadBlob(blob, filename);
   }
 
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  // Beyond the top-level shape, each entry's date/weightKg used to go
+  // unvalidated — a hand-edited or corrupted backup would import "successfully"
+  // and then render literal "NaN" (Log/Dashboard weight) or "Invalid Date"
+  // (Log/detail sheet date) for that row with no error ever surfaced.
+  // Rejecting up front is safer than importing corrupted rows silently.
   function validateBackup(obj) {
     if (!obj || obj.format !== BACKUP_FORMAT) throw new Error('This file is not a Fatter backup.');
     if (typeof obj.version !== 'number' || obj.version > BACKUP_VERSION) throw new Error('This backup was made by a newer version of Fatter.');
     if (!Array.isArray(obj.entries)) throw new Error('This backup file looks corrupted.');
+    for (const e of obj.entries) {
+      if (!e || typeof e.date !== 'string' || !DATE_RE.test(e.date) || Number.isNaN(Date.parse(e.date))) {
+        throw new Error('This backup file looks corrupted (invalid entry date).');
+      }
+      if (typeof e.weightKg !== 'number' || !Number.isFinite(e.weightKg) || e.weightKg <= 0) {
+        throw new Error('This backup file looks corrupted (invalid entry weight).');
+      }
+    }
     return obj;
   }
 
