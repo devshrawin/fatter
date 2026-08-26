@@ -413,6 +413,52 @@ img { max-width: 100%; display: block; }
 .sheet--form__body { flex: 1 1 auto; overflow-y: auto; padding: var(--sp-5) var(--sp-4); }
 .sheet--form__footer { flex: none; padding: var(--sp-3) var(--sp-4) calc(var(--sp-5) + var(--safe-bottom)); border-top: 1px solid var(--border); }
 
+/* ============ Onboarding ============ */
+.onboarding-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: var(--surface);
+  display: flex; flex-direction: column;
+}
+.onboarding-top {
+  flex: none; display: flex; justify-content: flex-end;
+  padding: calc(var(--safe-top) + var(--sp-4)) var(--sp-5) 0;
+}
+.onboarding-skip {
+  background: none; border: none; color: var(--text-tertiary);
+  font-size: var(--fs-label); font-weight: 600; cursor: pointer; padding: var(--sp-2);
+}
+.onboarding-body {
+  flex: 1 1 auto; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: var(--sp-4) var(--sp-7); text-align: center;
+}
+.onboarding-body--install {
+  align-items: stretch; justify-content: flex-start; text-align: left; padding: var(--sp-4) var(--sp-5);
+}
+.onboarding-icon { margin-bottom: var(--sp-7); }
+.onboarding-title { font-size: var(--fs-title); font-weight: 700; color: var(--text-primary); line-height: 1.25; margin-bottom: var(--sp-4); }
+.onboarding-text { font-size: var(--fs-body); color: var(--text-secondary); line-height: 1.55; }
+.onboarding-footer { flex: none; padding: 0 var(--sp-5) calc(var(--sp-8) + var(--safe-bottom)); }
+.onboarding-dots { display: flex; justify-content: center; gap: var(--sp-2); margin-bottom: var(--sp-5); }
+.onboarding-dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--border); }
+.onboarding-dot.is-active { width: 20px; background: var(--accent); }
+
+/* install-step content, shared with the "Add to Home Screen" Settings sheet */
+.install-step-row { display: flex; gap: var(--sp-3); align-items: flex-start; margin-bottom: var(--sp-5); }
+.install-step-num {
+  width: 26px; height: 26px; border-radius: var(--r-pill); flex: none; margin-top: 1px;
+  background: var(--accent-muted); color: var(--accent);
+  font-size: var(--fs-label); font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.install-divider { height: 1px; background: var(--border); margin: var(--sp-2) 0 var(--sp-5); }
+.install-icon-inline { width: 17px; height: 17px; vertical-align: -3px; margin-left: 2px; }
+.install-home-icon {
+  width: 28px; height: 28px; border-radius: var(--r-control); background: var(--surface-raised);
+  border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: middle; flex: none;
+}
+
 /* ============ Toast ============ */
 .toast-root {
   position: fixed; left: 0; right: 0; bottom: calc(140px + var(--safe-bottom));

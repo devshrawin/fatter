@@ -142,6 +142,9 @@
       await db.settings.clear();
       // preserve unit/theme preference across a full data clear — those are
       // app preferences, not "data" in the sense the user is clearing.
+      // 'onboarded' is deliberately NOT preserved: clearing all data resets
+      // the device to a fresh-install state, so first-run onboarding runs
+      // again next launch (falls back to DEFAULT_SETTINGS.onboarded = false).
       for (const row of settings) {
         if (row.key === 'unit' || row.key === 'theme') await db.settings.put(row);
       }

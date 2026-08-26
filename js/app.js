@@ -115,6 +115,8 @@
     if (!location.hash) location.hash = `#/${DEFAULT_ROUTE}`;
     await renderRoute();
 
+    FatterOnboarding.maybeShow(settings);
+
     // Requested only after the app has rendered successfully — asking for
     // persistence before the user has done anything real just adds a permission
     // prompt with no context.

@@ -776,6 +776,13 @@
             <div class="settings-row__label">Import backup</div>
             <svg class="icon" style="width:16px;height:16px;color:var(--text-secondary)" viewBox="0 0 24 24"><use href="#icon-upload"/></svg>
           </div>
+          <div class="settings-row" id="btn-add-to-home-screen" style="cursor:pointer">
+            <div class="row" style="gap:10px">
+              <svg class="icon" style="width:18px;height:18px;color:var(--accent)" viewBox="0 0 24 24"><use href="#icon-add-home"/></svg>
+              <div class="settings-row__label">Add to Home Screen</div>
+            </div>
+            <svg class="icon" style="width:16px;height:16px;color:var(--text-tertiary)" viewBox="0 0 24 24"><use href="#icon-chevron"/></svg>
+          </div>
           <input type="file" id="import-file-input" accept="application/json" hidden>
         </div>
       </div>
@@ -862,6 +869,7 @@
     });
 
     root.querySelector('#btn-import-backup').addEventListener('click', () => root.querySelector('#import-file-input').click());
+    root.querySelector('#btn-add-to-home-screen').addEventListener('click', () => FatterOnboarding.showInstallHelp());
     root.querySelector('#import-file-input').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       e.target.value = '';
@@ -886,6 +894,7 @@
           toast('All data cleared.');
           location.hash = '#/dashboard';
           refresh();
+          FatterOnboarding.maybeShow(await getSettings());
         },
       });
     });
@@ -945,6 +954,6 @@
 
   global.FatterUI = {
     renderDashboard, renderLog, renderGallery, renderSettings,
-    initGlobalHandlers, toast, closeModal,
+    initGlobalHandlers, toast, closeModal, openSheet,
   };
 })(window);
