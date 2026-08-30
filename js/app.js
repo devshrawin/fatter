@@ -5,6 +5,13 @@
 (function () {
   'use strict';
 
+  // Bump on every release. This is what the Settings footer shows, so it is
+  // the only way to tell from inside the app whether an update actually
+  // landed. It was previously hardcoded to 1.0.0 and never changed, which
+  // made it useless for exactly that purpose.
+  const APP_VERSION = '1.2.0';
+
+
   const ROUTES = ['dashboard', 'log', 'gallery', 'settings'];
   const DEFAULT_ROUTE = 'dashboard';
 
@@ -160,6 +167,20 @@
     registerServiceWorker();
   }
 
-  window.FatterApp = { applyTheme };
+  // Ask the active service worker which cache it is serving from. That is the
+  // ground truth for "did the update land", independent of APP_VERSION.
+  async function activeCacheVersion() {
+    try {
+      if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return null;
+      return await new Promise((resolve) => {
+        const ch = new MessageChannel();
+        const timer = setTimeout(() => resolve(null), 1200);
+        ch.port1.onmessage = (e) => { clearTimeout(timer); resolve(e.data && e.data.version); };
+        navigator.serviceWorker.controller.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
+      });
+    } catch { return null; }
+  }
+
+  window.FatterApp = { applyTheme, APP_VERSION, activeCacheVersion };
   boot();
 })();

@@ -95,6 +95,30 @@
     return { mask, W, H };
   }
 
+  // Grow the mask by a radius, separably (a horizontal pass then a vertical
+  // one) so cost stays linear in the radius rather than quadratic. Used to
+  // fuse a digit's separate bars into a single blob before locating.
+  function dilate(mask, W, H, rx, ry) {
+    const tmp = new Uint8Array(W * H), out = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let on = 0;
+      for (let k = -rx; k <= rx && !on; k++) {
+        const xx = x + k;
+        if (xx >= 0 && xx < W && mask[y * W + xx]) on = 1;
+      }
+      tmp[y * W + x] = on;
+    }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let on = 0;
+      for (let k = -ry; k <= ry && !on; k++) {
+        const yy = y + k;
+        if (yy >= 0 && yy < H && tmp[yy * W + x]) on = 1;
+      }
+      out[y * W + x] = on;
+    }
+    return out;
+  }
+
   function components(mask, W, H) {
     const lab = new Int32Array(W * H);
     const out = [];
@@ -423,82 +447,128 @@
     };
   }
 
-  // ---------------- best-effort localisation ----------------
+  // ---------------- localisation ----------------
   //
-  // Finding a readout that can occupy under 1% of a cluttered photo is the
-  // genuinely hard half of this problem, and this will not always get it
-  // right. It exists to seed the crop box the user can drag, not to be
-  // trusted on its own, so it is tuned to propose something plausible rather
-  // than to be certain.
-  function locate(bmp, opts) {
+  // Proposes candidate readout rectangles. It does NOT try to be right first
+  // time; read() decodes every candidate and lets the decoder pick, because
+  // the decoder can actually tell a row of digits from a bright smudge and a
+  // geometric heuristic cannot.
+  //
+  // The important detail is the dilation. Connected components on the raw
+  // mask finds individual SEGMENTS, a horizontal bar here, a vertical bar
+  // there, so any attempt to group "similar sized blobs on a baseline" is
+  // meaningless: the bars of a single digit have nothing in common
+  // dimensionally. Dilating first fuses each digit, and at a larger radius
+  // fuses the whole readout, which is what makes the shape tests below mean
+  // anything at all.
+  function locateCandidates(bmp, opts) {
     opts = opts || {};
     const AW = opts.analysisWidth || 900;
     const { mask, W, H } = litMask(bmp, AW);
-    const { comps } = components(mask, W, H);
+    const S = bmp.width / W;
+    const rects = [];
+    const seen = new Set();
 
     const fillOf = (b) => {
       let lit = 0;
       for (let y = b.minY; y <= b.maxY; y++) for (let x = b.minX; x <= b.maxX; x++) if (mask[y * W + x]) lit++;
       return lit / Math.max(1, b.w * b.h);
     };
-    // Seven-segment glyphs are thin strokes with hollow middles, so only part
-    // of their box is lit. A solid highlight (a toe, a reflection) fills
-    // nearly all of its box, which separates the two cleanly.
-    const cand = comps.filter((b) => {
-      if (b.h < H * 0.012 || b.h > H * 0.40) return false;
-      if (b.w < 1 || b.w > W * 0.5) return false;
-      if (b.n < 8) return false;
-      if (b.w / b.h >= 2.5) return false;
-      b.fill = fillOf(b);
-      return b.fill >= 0.08 && b.fill <= 0.65;
-    });
-    if (cand.length < 2) return null;
 
-    let best = null;
-    for (const seed of cand) {
-      const cy = (seed.minY + seed.maxY) / 2;
-      const grp = cand.filter((b) => {
-        const by = (b.minY + b.maxY) / 2;
-        return Math.abs(by - cy) < seed.h * 0.5 && b.h > seed.h * 0.55 && b.h < seed.h * 1.8;
-      }).sort((a, b) => a.minX - b.minX);
-      if (grp.length < 2) continue;
+    const push = (minX, minY, maxX, maxY, unitH) => {
+      for (const padMul of [0.22, 0.45, 0.75]) {
+        const padX = (maxX - minX) * 0.05 + unitH * padMul;
+        const padY = unitH * padMul;
+        const x = Math.max(0, (minX - padX) * S);
+        const y = Math.max(0, (minY - padY) * S);
+        const w = Math.min(bmp.width - x, (maxX - minX + 2 * padX) * S);
+        const h = Math.min(bmp.height - y, (maxY - minY + 2 * padY) * S);
+        if (w < 12 || h < 12) continue;
+        const key = [x, y, w, h].map((v) => Math.round(v / 4)).join(',');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rects.push({ x, y, w, h });
+      }
+    };
 
-      const hs = grp.map((b) => b.h);
-      const meanH = hs.reduce((a, b) => a + b, 0) / hs.length;
-      const hVar = Math.sqrt(hs.reduce((s, v) => s + (v - meanH) ** 2, 0) / hs.length) / meanH;
+    // Two dilation scales: the smaller one tends to fuse each digit on its
+    // own, the larger one tends to fuse a whole readout into one blob. Which
+    // of the two wins depends on how big the display is in frame, so try both.
+    for (const radFrac of [0.004, 0.009]) {
+      const r = Math.max(1, Math.round(AW * radFrac));
+      const dil = dilate(mask, W, H, r, r);
+      const { comps } = components(dil, W, H);
 
-      const cxs = grp.map((b) => (b.minX + b.maxX) / 2);
-      let gapVar = 0;
-      if (cxs.length >= 3) {
-        const gaps = [];
-        for (let i = 1; i < cxs.length; i++) gaps.push(cxs[i] - cxs[i - 1]);
-        const mg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-        gapVar = mg > 0 ? Math.sqrt(gaps.reduce((s, v) => s + (v - mg) ** 2, 0) / gaps.length) / mg : 1;
+      // (a) a blob that is itself readout-shaped: wide, not too tall, and
+      // hollow rather than a solid highlight
+      for (const b of comps) {
+        if (b.h < H * 0.010 || b.h > H * 0.35) continue;
+        if (b.w < b.h * 0.8 || b.w > W * 0.85) continue;
+        const ar = b.w / b.h;
+        if (ar < 1.2 || ar > 9) continue;
+        const f = fillOf(b);
+        if (f < 0.10 || f > 0.80) continue;
+        push(b.minX, b.minY, b.maxX, b.maxY, b.h);
       }
 
-      const minX = Math.min(...grp.map((b) => b.minX)), maxX = Math.max(...grp.map((b) => b.maxX));
-      const minY = Math.min(...grp.map((b) => b.minY)), maxY = Math.max(...grp.map((b) => b.maxY));
-      const spanAR = (maxX - minX) / Math.max(1, maxY - minY);
-      if (spanAR < 0.7 || spanAR > 9) continue;
-
-      const score = (Math.min(grp.length, 5) / 5) * (1 - Math.min(1, hVar)) * (1 - Math.min(1, gapVar * 0.8)) * meanH;
-      if (!best || score > best.score) best = { minX, maxX, minY, maxY, meanH, score };
+      // (b) several digit-shaped blobs sharing a baseline
+      const digits = comps.filter((b) => {
+        if (b.h < H * 0.010 || b.h > H * 0.35) return false;
+        if (b.w < 1 || b.w > W * 0.35) return false;
+        const ar = b.w / b.h;
+        if (ar < 0.12 || ar > 1.6) return false;   // a digit is taller than wide
+        const f = fillOf(b);
+        return f >= 0.10 && f <= 0.85;
+      });
+      for (const seed of digits) {
+        const cy = (seed.minY + seed.maxY) / 2;
+        const grp = digits.filter((b) => {
+          const by = (b.minY + b.maxY) / 2;
+          return Math.abs(by - cy) < seed.h * 0.5 && b.h > seed.h * 0.55 && b.h < seed.h * 1.9;
+        });
+        if (grp.length < 2) continue;
+        const minX = Math.min(...grp.map((b) => b.minX)), maxX = Math.max(...grp.map((b) => b.maxX));
+        const minY = Math.min(...grp.map((b) => b.minY)), maxY = Math.max(...grp.map((b) => b.maxY));
+        const ar = (maxX - minX) / Math.max(1, maxY - minY);
+        if (ar < 0.8 || ar > 10) continue;
+        const meanH = grp.reduce((s, b) => s + b.h, 0) / grp.length;
+        push(minX, minY, maxX, maxY, meanH);
+      }
     }
-    if (!best) return null;
-
-    const S = bmp.width / W;
-    const padX = (best.maxX - best.minX) * 0.10 + best.meanH * 0.30;
-    const padY = best.meanH * 0.40;
-    const x = Math.max(0, (best.minX - padX) * S);
-    const y = Math.max(0, (best.minY - padY) * S);
-    return {
-      x, y,
-      w: Math.min(bmp.width - x, (best.maxX - best.minX + 2 * padX) * S),
-      h: Math.min(bmp.height - y, (best.maxY - best.minY + 2 * padY) * S),
-    };
+    return rects;
   }
 
-  // Locate then read, for callers that want one call.
+  // A single geometric guess, used ONLY to seed the crop box the user then
+  // confirms. It deliberately does not decode anything.
+  //
+  // Picking the seed by "decode every candidate and keep the most confident"
+  // was tried and is actively harmful. Searching dozens of crops for the best
+  // looking result is a multiple-comparisons trap: across 25 real photos it
+  // reliably found some crop whose noise happened to decode cleanly, turning
+  // readings that had correctly been rejected into confident wrong answers
+  // (68, 196 and 96 kg among them). More candidates means more chances to get
+  // unlucky, so the seed is chosen on shape alone and the decoding only ever
+  // happens on the box the user has confirmed.
+  function locate(bmp, opts) {
+    const cands = locateCandidates(bmp, opts);
+    if (!cands.length) return null;
+    // Prefer the most readout-shaped proposal: wide relative to its height,
+    // and reasonably large, since a scale readout is the dominant lit thing
+    // in a photo of a scale.
+    let best = null;
+    for (const r of cands) {
+      const ar = r.w / Math.max(1, r.h);
+      if (ar < 1.1 || ar > 8) continue;
+      const shape = 1 - Math.min(1, Math.abs(ar - 3) / 5);   // readouts cluster near 3:1
+      const q = shape * Math.sqrt(r.w * r.h);
+      if (!best || q > best.q) best = { q, r };
+    }
+    return best ? best.r : cands[0];
+  }
+
+  // Reads whatever is inside `rect`. There is no whole-photo read(): a
+  // reading is only ever taken from a region the user has confirmed, for the
+  // reason given above.
   function read(bmp, opts) {
     const rect = locate(bmp, opts);
     if (!rect) return { ok: false, reason: 'display not found' };
@@ -508,7 +578,7 @@
   }
 
   global.FatterSevenSeg = {
-    read, readRegion, locate, decode, litMask, cleanGlyphs, classify, components,
+    read, readRegion, locate, locateCandidates, decode, litMask, cleanGlyphs, classify, components, dilate,
     MIN_SCORE, MIN_MARGIN, ZONES, PATTERNS,
   };
 })(window);

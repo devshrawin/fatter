@@ -14,71 +14,10 @@ const FILES=["B7315BD2-58E3-4EAA-BD4D-D8A0E64A37C1.JPG","CCCD27EA-1E70-4173-B313
 "FB44E818-F4D5-49FC-9F99-330C4A50B5FA.JPG"];
 for(let i=1;i<=18;i++)FILES.push("h"+i+".jpg");
 
-// Build MANY plausible readout candidates, then let the decoder choose.
-// locate() commits to one group up front, which is where it goes wrong; this
-// defers the decision to the thing that can actually tell a readout from a
-// bright smudge.
-function candidates(bmp, AW){
-  const {mask,W,H}=FatterSevenSeg.litMask(bmp,AW);
-  const {comps}=FatterSevenSeg.components(mask,W,H);
-  const fill=b=>{let n=0;for(let y=b.minY;y<=b.maxY;y++)for(let x=b.minX;x<=b.maxX;x++)if(mask[y*W+x])n++;return n/Math.max(1,b.w*b.h);};
-  const cand=comps.filter(b=>{
-    if(b.h<H*0.010||b.h>H*0.42) return false;
-    if(b.w<1||b.w>W*0.55) return false;
-    if(b.n<6) return false;
-    if(b.w/b.h>=2.8) return false;
-    b.fill=fill(b); return b.fill>=0.06&&b.fill<=0.70;
-  });
-  const groups=[];
-  for(const seed of cand){
-    const cy=(seed.minY+seed.maxY)/2;
-    const grp=cand.filter(b=>{
-      const by=(b.minY+b.maxY)/2;
-      return Math.abs(by-cy)<seed.h*0.55 && b.h>seed.h*0.5 && b.h<seed.h*2.0;
-    }).sort((a,b)=>a.minX-b.minX);
-    if(grp.length<2) continue;
-    const minX=Math.min(...grp.map(b=>b.minX)),maxX=Math.max(...grp.map(b=>b.maxX));
-    const minY=Math.min(...grp.map(b=>b.minY)),maxY=Math.max(...grp.map(b=>b.maxY));
-    const ar=(maxX-minX)/Math.max(1,maxY-minY);
-    if(ar<0.6||ar>10) continue;
-    const meanH=grp.reduce((s,b)=>s+b.h,0)/grp.length;
-    const key=minX+','+minY+','+maxX+','+maxY;
-    if(groups.some(g=>g.key===key)) continue;
-    groups.push({key,minX,maxX,minY,maxY,meanH,n:grp.length});
-  }
-  const S=bmp.width/W;
-  // a few padding variants per group, since the right crop margin varies
-  const rects=[];
-  for(const g of groups){
-    for(const padMul of [0.20,0.40,0.65]){
-      const padX=(g.maxX-g.minX)*0.06+g.meanH*padMul;
-      const padY=g.meanH*padMul;
-      const x=Math.max(0,(g.minX-padX)*S), y=Math.max(0,(g.minY-padY)*S);
-      rects.push({x,y,
-        w:Math.min(bmp.width-x,(g.maxX-g.minX+2*padX)*S),
-        h:Math.min(bmp.height-y,(g.maxY-g.minY+2*padY)*S), n:g.n});
-    }
-  }
-  return rects;
-}
-
-function best(bmp,unit){
-  const rects=candidates(bmp,900);
-  let win=null;
-  for(const r of rects){
-    if(r.w<10||r.h<10) continue;
-    let res; try{ res=FatterSevenSeg.readRegion(bmp,r,{unit}); }catch{ continue; }
-    if(!res.ok||!res.plausible) continue;
-    const q=res.score*(0.5+res.margin);
-    if(!win||q>win.q) win={q,res,rect:r};
-  }
-  return {win,tried:rects.length};
-}
-
 window.__R=[];
 (async()=>{
  const out=document.getElementById('out');
- let got=0;
+ let got=0, conf=0;
  for(const f of FILES){
   const cell=document.createElement('div');
   cell.style.cssText='width:186px;border:1px solid #333;padding:4px;border-radius:4px';
@@ -86,23 +25,23 @@ window.__R=[];
   try{
    const bmp=await createImageBitmap(await (await fetch(P+f)).blob(),{imageOrientation:'from-image'});
    const t0=performance.now();
-   const {win,tried}=best(bmp,'kg');
+   const r=FatterSevenSeg.read(bmp,{unit:'kg'});
    const ms=Math.round(performance.now()-t0);
-   cell.innerHTML=`<b>${f.slice(0,9)}</b> <span style="color:#666">${tried}c ${ms}ms</span><br>`+
-     (win?`<span style="color:${win.res.confident?'#6f6':'#fa0'};font-size:17px">${win.res.value}</span> `+
-          `<span style="color:#888">${win.res.score.toFixed(2)}/${win.res.margin.toFixed(2)}</span>`
-         :`<span style="color:#f66">no plausible reading</span>`);
-   if(win)got++;
+   cell.innerHTML=`<b>${f.slice(0,9)}</b> <span style="color:#666">${r.tried||0}c ${ms}ms</span><br>`+
+     (r.ok?`<span style="color:${r.confident?'#6f6':'#fa0'};font-size:17px">${r.value}</span> `+
+          `<span style="color:#888">${r.score.toFixed(2)}/${r.margin.toFixed(2)}</span>`
+         :`<span style="color:#f66">${r.reason}</span>`);
+   if(r.ok){got++; if(r.confident)conf++;}
    const TW=178, sc=TW/bmp.width;
    const t=document.createElement('canvas'); t.width=TW; t.height=Math.round(bmp.height*sc);
    const tx=t.getContext('2d'); tx.drawImage(bmp,0,0,t.width,t.height);
-   if(win){tx.strokeStyle='#0f0';tx.lineWidth=2;tx.strokeRect(win.rect.x*sc,win.rect.y*sc,win.rect.w*sc,win.rect.h*sc);}
+   if(r.rect){tx.strokeStyle='#0f0';tx.lineWidth=2;tx.strokeRect(r.rect.x*sc,r.rect.y*sc,r.rect.w*sc,r.rect.h*sc);}
    t.style.cssText='width:178px;display:block;margin-top:3px'; cell.appendChild(t);
-   if(win&&win.res.crop){win.res.crop.style.cssText='width:178px;image-rendering:pixelated;margin-top:3px';cell.appendChild(win.res.crop);}
-   window.__R.push({f,value:win?win.res.value:null,score:win?+win.res.score.toFixed(2):null,margin:win?+win.res.margin.toFixed(2):null,confident:win?win.res.confident:false,tried,ms});
+   if(r.crop){r.crop.style.cssText='width:178px;image-rendering:pixelated;margin-top:3px';cell.appendChild(r.crop);}
+   window.__R.push({f,value:r.ok?r.value:null,score:r.ok?+r.score.toFixed(2):null,margin:r.ok?+r.margin.toFixed(2):null,confident:!!r.confident,tried:r.tried,ms});
   }catch(e){cell.textContent=f+' ERR '+e.message; window.__R.push({f,err:e.message});}
  }
- document.getElementById('sum').textContent=`plausible reading on ${got}/${FILES.length}`;
+ document.getElementById('sum').textContent=`reading on ${got}/${FILES.length}, confident on ${conf}`;
  window.__DONE=true;
 })();
 </script>

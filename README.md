@@ -1,194 +1,167 @@
 # Fatter
 
-A private, offline progress tracker. Take a photo, log your weight, watch the
-line move.
+**[Open the app: devshrawin.github.io/fatter](https://devshrawin.github.io/fatter/)**
 
-## Privacy
+Track your weight with a photo next to every number, and watch the line move.
 
-**All your photos and weight data never leave your device.** Fatter has no
-server, no account, and no cloud sync of any kind. Every entry (including
-photo blobs) is stored locally in your browser's IndexedDB (via
-[Dexie.js](https://dexie.org)). Nothing is ever uploaded, and there is no
-analytics or tracking of any kind. Clearing your browser's site data for
-Fatter deletes it permanently. The app cannot recover it, because it never
-had a second copy.
+Everything stays on your phone. No account, no sign-up, no server, no sync.
+Nothing you put in Fatter is ever uploaded anywhere, because there is nowhere
+for it to go.
 
-The only way your data leaves the device is if *you* explicitly export it
-(as an Excel file or a JSON backup) using the buttons in Settings.
+## Getting it on your phone
 
-## First run
+Open [the link](https://devshrawin.github.io/fatter/) and add it to your home
+screen. On iPhone that is Share, then **Add to Home Screen**. On Android your
+browser offers an **Install** button. Fatter walks you through it the first
+time you open it, and you can bring those instructions back any time from
+**Settings → Add to Home Screen**.
 
-The first time you open Fatter (and again any time you fully clear its data),
-a short 4-step intro runs: **Welcome → How it works → Everything stays on
-your device → Add to Home Screen** (skipped if you're already running the
-installed, standalone app). "Skip" jumps straight past all of it. The install
-step adapts to your platform: a real one-tap **Install** button on
-Chrome/Android and desktop, manual step-by-step instructions on iOS Safari
-(which has no install API at all), and a generic pointer to the browser's own
-menu everywhere else. You can reopen the same install instructions any time
-from **Settings → Add to Home Screen**.
+Once it is on your home screen it behaves like any other app, including
+working with no signal at all.
 
-**Clearing all data (Settings → Clear all data) resets `onboarded` along with
-everything else**, so the app looks and behaves like a fresh install on next
-launch, first-run intro included.
+## What you can do with it
+
+**Log a weight with a photo.** Tap the **+** button, take a photo or pick one,
+and enter the number. Fatter pre-fills your last weight so most days you just
+tap Save. It also reads the date off the photo, so logging yesterday's weigh-in
+picks the right day on its own.
+
+**Read the number off your scale.** Instead of typing it, tap **Read from the
+scale**. Your photo opens with a box over the display; drag the box onto the
+numbers and Fatter reads them for you. The reading updates as you move the box,
+so you can see exactly what it has read before you accept it. It never fills
+the number in on its own, so it can never quietly record a weight you did not
+take. (You can switch this off in Settings.)
+
+**See your progress.** The dashboard shows your current and starting weight,
+total change, weekly average, and a chart you can scope to the last 7, 30 or 90
+days. **Log** is a timeline of every entry with the change since the one
+before. **Gallery** is just the photos, tap any one to step through them.
+
+**Set a goal.** Add a goal weight and Fatter shows how far you have to go, plus
+a rough estimate of when you will get there, but only when your recent trend is
+actually heading that way. It never assumes losing weight is the goal.
+
+**See your BMI.** Add your height (in cm, or in feet and inches) and you get a
+BMI card and a Weight/BMI toggle on the chart. BMI is a crude measure that
+ignores muscle, frame and age, so it is shown as context rather than a target.
+
+**Keep a streak.** Consecutive days with an entry, which does not break just
+because today has not happened yet.
+
+**Get a nudge.** If it has been a few days, the dashboard shows a small
+reminder you can dismiss. It is not a push notification and never will be:
+those need a server, and Fatter does not have one, so it only appears while the
+app is open.
+
+## Your data is yours
+
+Every photo and every number lives in your browser's storage on that one
+device. There is no copy anywhere else, which is the point, and also the thing
+to be careful about:
+
+- **Export a backup now and then.** Settings → **Export full backup** saves a
+  single file with every entry, note and photo. **Import backup** puts it back,
+  either merged with what is there or replacing it entirely.
+- **Get it as a spreadsheet.** Settings → **Download Excel** produces a real
+  `.xlsx` with your full log and a summary sheet, handy for sharing with a
+  coach or just keeping a copy.
+- **Clearing your browser's data for this site deletes everything.** Fatter
+  cannot get it back, because it never had a second copy.
+
+## Honest limitations
+
+- **It does not sync.** Fatter on your phone and Fatter on your laptop are two
+  separate logs. Use a backup file to move between them.
+- **Browsers can evict storage.** If a phone runs very low on space, browsers
+  can clear site data. Fatter asks for persistent storage and Settings tells
+  you whether it was granted, but no browser promises forever. This is the real
+  reason to export a backup occasionally.
+- **iPhone storage rules are Apple's.** An installed home-screen app gets more
+  durable storage than a Safari tab, but the specifics have changed across iOS
+  versions and are not in an app's control.
+- **Reading the scale needs a hand.** Fatter puts the box where it thinks the
+  display is, but finding a small readout in a busy photo is genuinely hard and
+  it is often wrong, so you position it. It reads correctly once pointed at the
+  display, and would rather say "no reading" than guess.
+- **Some raw HEIC files will not open.** iPhones shoot HEIC. Safari converts
+  them for you so this rarely comes up on iPhone, but desktop Chrome, Firefox
+  and most of Android cannot decode a raw `.heic`. Fatter says so clearly
+  instead of failing silently.
+
+---
+
+# For developers
+
+Vanilla HTML, CSS and JavaScript. No build step, no framework, no bundler. Open
+`index.html` over HTTP and it runs.
 
 ## Running locally
 
-Service workers and IndexedDB require a real HTTP origin. Opening
-`index.html` directly (`file://`) will not work.
+Service workers and IndexedDB need a real HTTP origin, so `file://` will not
+work.
 
 ```bash
 cd Fatter
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`.
+Then open `http://localhost:8000`. Any static server works.
 
-Any other static file server works too (`npx serve`, `php -S`, etc.). There
-is no build step and nothing to install.
+## Deploying
 
-## Deploying to GitHub Pages
+Push to `main`, then set **Settings → Pages** to deploy from `main` at the
+root. `.nojekyll` stops Jekyll from touching the files. Every path in the app
+is relative, so the same build works from a repo subpath, a domain root, or
+localhost with no configuration.
 
-1. Push this repository to GitHub.
-2. In the repo, go to **Settings → Pages**.
-3. Under **Build and deployment**, set **Source** to "Deploy from a branch",
-   branch `main`, folder `/ (root)`.
-4. Your app will be live at `https://<your-username>.github.io/<repo-name>/`.
+Bump `CACHE_VERSION` in [`sw.js`](sw.js) on any deploy that changes a cached
+file. It is the only thing that makes an existing install fetch anything new,
+because browsers decide whether to re-run a service worker install purely by
+byte-diffing that file. Bump `APP_VERSION` in [`js/app.js`](js/app.js) too; it
+is what Settings shows, alongside the cache the service worker is actually
+serving from, so an install can be checked from inside the app.
 
-The `.nojekyll` file in this repo tells GitHub Pages to serve files as-is
-(Jekyll would otherwise ignore folders starting with an underscore and mangle
-some file handling). All paths in the app are relative, so it works whether
-it's served from a repo subpath, a custom domain root, or `localhost`.
+## Reading a seven-segment display
 
-## How the weight suggestion works
+This is the one genuinely unusual part, in [`js/sevenseg.js`](js/sevenseg.js).
 
-When you add a new entry, the weight field is pre-filled to save you a step:
+General OCR cannot do this job. Tesseract is trained on printed type, and a
+seven-segment display is glowing bars with gaps between them. Measured on a
+real photo from this project, a perfectly cropped, upright, upscaled image of a
+display reading `142.7` came back as `"2"`. A purpose-built seven-segment model
+still returned `146.7`. So Tesseract was removed, along with 5.8 MB of WASM and
+trained data.
 
-- **If you have previous entries**, it suggests your most recent weight.
-- **If this is your first entry**, the field is left empty with a placeholder.
+What replaced it decodes geometry instead of recognising shapes. A
+seven-segment digit is a seven-bit code with ten valid values, so once a digit
+is isolated you test which bars are lit and look the answer up. Exact by
+construction, no model, no download, no network. The pipeline: threshold lit
+pixels by local contrast (a global threshold saturates on a sunlit floor),
+strip panel glare, find the glyph band, split digits on a projection profile
+taken over the upper band only (a decimal point bridges digits in a full-height
+profile), then decode each digit's bars.
 
-The suggested value is always just a starting point: it's clearly marked and
-fully editable, and the moment you start typing, the "suggested" styling
-disappears since it's now your entered value.
+Two findings worth preserving, both from measuring rather than guessing:
 
-There's also an optional **"Vary suggested weight slightly"** toggle in
-Settings, off by default. When enabled, it adds a small random ±0.2–0.5
-variation to the suggestion instead of repeating your last weight exactly.
-Some people find an identical number every time looks unrealistic. It's off
-by default deliberately: this app logs your actual health data, and a
-suggested number should never be mistaken for something you measured.
-Nothing is ever saved until you tap Save, regardless of this setting.
+- **Margin matters, score does not.** A correct reading and a reading pulled
+  out of noise score about the same (0.83 versus 0.88). What separates them is
+  that a correct digit beats its runner-up clearly while a noise digit sits
+  nearly tied. Thresholds are set accordingly.
+- **Searching many crops for the most confident reading makes things worse.**
+  It is a multiple-comparisons trap: across 25 photos it reliably found some
+  crop whose noise decoded cleanly, turning correctly-rejected readings into
+  confident wrong answers. Automatic detection therefore only ever seeds the
+  box the user confirms.
 
-### Reading the photo itself
+`tools/sevenseg-lab.html` and `tools/sevenseg-eval.html` are the harnesses
+those numbers came from. They expect sample photos in `_test-photos/`, which is
+gitignored and not shipped.
 
-Two more suggestions come from the photo you just picked, both on by default
-and both overridden the instant you edit the field they fill:
+## Libraries
 
-- **Date**: if the photo has EXIF "date taken" metadata (basically any
-  camera photo), the date field defaults to that instead of today. Screenshots
-  and photos without EXIF just fall back to today, as before.
-- **Weight**: pick a photo and a **Read from the scale** button appears under
-  the weight field. It opens your photo with a box over the display, already
-  positioned where Fatter thinks the numbers are. Drag the box over them and
-  the reading updates live, so you can see exactly what is being read before
-  you accept it. Tap **Use this** and it fills the weight field. Turn the
-  whole thing off in Settings ("Read weight from photo").
-
-### How the reading actually works
-
-Fatter does not use general-purpose OCR for this, because general-purpose OCR
-cannot do it. Tesseract is trained on printed type, and a seven-segment
-display is glowing bars with gaps between them. Measured on a real photo from
-this project: a perfectly cropped, upright, upscaled image of a display
-reading `142.7` came back as `"2"`. That is not a tuning problem, and a bigger
-model does not fix it either; a purpose-built seven-segment model still
-returned `146.7`.
-
-So instead of recognising a shape, Fatter decodes the geometry. A
-seven-segment digit is not really a glyph, it is a seven-bit code with only
-ten valid values, so once a digit is isolated you test which of the seven bars
-are lit and look the answer up. That is exact by construction, runs instantly,
-and needs **no model, no download and no network**. The whole reader is
-[`js/sevenseg.js`](js/sevenseg.js), a few hundred lines with no dependencies.
-
-Two deliberate choices worth knowing about:
-
-- **You position the box; Fatter never reads a photo unsupervised.** Finding a
-  display that can occupy under 1% of a cluttered photo is the genuinely hard
-  part, and automatic detection is not reliable enough to trust. When it lands
-  off the display, whatever marks it does find can still decode cleanly and
-  score high, so it hands back a *confident wrong number*. On a real photo of
-  a scale reading 142.7, the automatic crop confidently produced 111.1. A
-  wrong weight written into a health log is worse than no suggestion, so the
-  automatic guess only ever seeds the box you confirm.
-- **A reading has to be plausible as well as clear.** Every reading is checked
-  for a sane digit count and a value inside human bodyweight range for your
-  unit, on top of the per-digit confidence. Anything that fails is shown as
-  "no reading" rather than offered.
-
-## Goal weight & BMI
-
-Both optional, both set in Settings, both entirely local:
-
-- **Goal weight** adds a stat card showing how much is left and, only when
-  your recent trend is actually heading toward it, a rough ETA. Direction-
-  neutral: it never assumes losing (or gaining) is "the" goal.
-- **Height** unlocks a BMI stat card and a Weight/BMI toggle on the
-  dashboard chart. BMI is a crude population-level measure that ignores
-  muscle mass, frame, age, and sex, so it's shown as context (with its
-  standard WHO category label), not as something to optimize for.
-
-## Streaks, chart range, and reminders
-
-- A **streak** stat card appears once you've logged at least one day:
-  consecutive calendar days with an entry, not reset by a day that just
-  hasn't happened yet.
-- The dashboard chart has a **7d / 30d / 90d / All** toggle. It only scopes
-  the chart; the stat cards stay all-time, so a zoomed-in chart view can't
-  make your starting weight look like it moved.
-- If it's been a few days since your last entry, the dashboard shows a
-  small dismissible reminder (one of ~15 rotating messages, at most once a
-  day). This is **not a push notification**. Fatter has no server to send
-  one from, so it only ever appears while you actually have the app open,
-  the same way the rest of the app works.
-
-## Backup & restore
-
-- **Download Excel** (Settings) generates a real `.xlsx` with your full entry
-  log and a summary sheet, good for sharing with a coach or just having a
-  spreadsheet copy.
-- **Export full backup** generates a JSON file containing every entry, note,
-  and photo, suitable for moving to a new device or just as a safety copy.
-- **Import backup** reads that JSON back in, either merging with what's
-  already on the device or fully replacing it (replacing requires typing
-  `REPLACE` to confirm; it's irreversible).
-
-## Limitations, honestly
-
-- **No sync, by design.** If you use Fatter on your phone and your laptop,
-  those are two independent, unconnected data sets. Use backup/restore to
-  move data between devices.
-- **Browser storage can be evicted.** Mobile browsers can clear IndexedDB
-  under storage pressure if a site hasn't been granted persistent storage.
-  Fatter requests persistent storage automatically, and Settings shows
-  whether it was granted, but no browser guarantees storage forever. Export
-  a backup occasionally if your data matters to you.
-- **iOS installed-PWA storage is its own thing.** Storage for a PWA added to
-  the iOS home screen is generally more durable than a regular Safari tab, but
-  Apple's rules here have changed over iOS versions and aren't fully in an
-  app's control.
-- **HEIC photos need a HEIC-capable browser.** iPhones often shoot HEIC/HEIF.
-  Safari (and any WebKit-based iOS browser) transparently converts these to
-  JPEG when you pick them from a file input, so this is rarely visible on
-  iPhone. Desktop Chrome/Firefox and most of Android have no built-in HEIC
-  decoder. If you hand Fatter a raw `.heic` file there, it will show a clear
-  error asking you to convert it or take a new photo instead of silently
-  failing.
-
-## Tech stack
-
-Vanilla HTML/CSS/JS, no build step, no framework. Vendored libraries, pinned
-versions in [`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt):
+Pinned and vendored, sources and licences in
+[`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt):
 
 | Library | Version | License | Use |
 |---|---|---|---|
@@ -196,37 +169,43 @@ versions in [`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt):
 | [Chart.js](https://www.chartjs.org) | 4.4.7 | MIT | Progress line chart |
 | [SheetJS (xlsx)](https://sheetjs.com) | 0.18.5 | Apache-2.0 | Excel export |
 
-Full pinned sources are in
-[`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt). SheetJS is lazy-loaded on
-the first Excel export rather than sitting in the startup path, and is cached
-after that. Reading the scale needs no library at all: it is plain geometry in
-[`js/sevenseg.js`](js/sevenseg.js).
+SheetJS is lazy-loaded on the first Excel export rather than sitting in the
+startup path.
 
-## Project structure
+## Structure
 
 ```
 Fatter/
-├── index.html          app shell + inline SVG icon sprite
-├── sw.js                service worker (root scope; see note in the file)
-├── manifest.json        PWA manifest
-├── css/style.css         design tokens + all components, dark-first
+├── index.html            app shell and inline SVG icon sprite
+├── sw.js                 service worker, root scope (see the note in the file)
+├── manifest.json         PWA manifest
+├── css/style.css         design tokens and components, dark-first
 ├── js/
-│   ├── app.js           bootstrap, router, service worker, offline indicator
-│   ├── db.js            Dexie schema, CRUD, settings, backup/restore, quota handling
-│   ├── image.js         client-side compression, EXIF-orientation/date, HEIC handling
-│   ├── sevenseg.js       reads a seven-segment scale display, no model needed
-│   ├── chart.js         stats + Chart.js rendering
-│   ├── export.js        Excel export + JSON backup/restore
-│   ├── ui.js             views, modals, add/edit flow, toasts
-│   ├── onboarding.js     first-run intro + "Add to Home Screen" (Settings)
-│   ├── nudge.js          "haven't logged in a while" dashboard banner
+│   ├── app.js            bootstrap, router, service worker, theme, liveQuery
+│   ├── db.js             Dexie schema, CRUD, settings, unit conversion
+│   ├── image.js          compression, EXIF orientation and date, HEIC handling
+│   ├── sevenseg.js       reads a seven-segment display, no model needed
+│   ├── chart.js          stats and Chart.js rendering
+│   ├── export.js         Excel export, JSON backup and restore
+│   ├── ui-core.js        DOM helpers, modal and sheet host, toasts
+│   ├── ui.js             global wiring (the + button, photo inputs)
+│   ├── onboarding.js     first-run intro and Add to Home Screen
+│   ├── nudge.js          the "log today?" banner
+│   ├── views/
+│   │   ├── dashboard.js    stat cards, chart, recent photos
+│   │   ├── log-gallery.js  timeline, photo grid, lightbox
+│   │   ├── entry-form.js   add and edit an entry, photo handling
+│   │   ├── settings.js     every setting, export, import, clear
+│   │   └── scale-reader.js the drag-a-box scale reading sheet
 │   └── vendor/           pinned third-party libraries
-│       ├── dexie.min.js
-│       ├── chart.umd.min.js
-│       ├── xlsx.full.min.js
-│       ├── VERSIONS.txt          pinned versions, sources, licenses
-├── icons/               PWA icons (brand mark from the Claude Design handoff;
-│                         icons/logo.png is a gitignored local design source,
-│                         not part of the generated/shipped icon set)
-└── tools/make-icons.js  regenerates the icons (dev-only, not shipped)
+├── icons/                PWA icons
+└── tools/                icon generator and the seven-segment harnesses
 ```
+
+Views re-render automatically through a Dexie `liveQuery` subscription in
+`app.js`, so any write to entries or settings refreshes whatever route is on
+screen. There is no manual refresh call to forget.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

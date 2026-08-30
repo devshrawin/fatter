@@ -18,7 +18,7 @@
 // without a bump, and existing installs kept running the pre-fix code the
 // entire time. Bump this EVERY time any precached file changes, no
 // exceptions, even for a "small" fix.)
-const CACHE_VERSION = 'fatter-v5';
+const CACHE_VERSION = 'fatter-v6';
 
 const PRECACHE_URLS = [
   './',
@@ -72,6 +72,11 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  // Lets Settings show which cache is actually serving the app, so "did the
+  // update land" has a real answer rather than a hardcoded version string.
+  if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ version: CACHE_VERSION });
+  }
 });
 
 self.addEventListener('fetch', (event) => {

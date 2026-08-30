@@ -43,6 +43,25 @@
     return unit === 'lb' ? value * CM_PER_INCH : value;
   }
 
+  // Imperial height reads as feet and inches, not as a pile of inches: nobody
+  // describes themselves as 67 inches tall. Storage stays canonical cm, this
+  // is purely the display and entry form of the same number.
+  function cmToFeetInches(cm) {
+    const totalIn = cm / CM_PER_INCH;
+    let ft = Math.floor(totalIn / 12);
+    let inch = Math.round((totalIn - ft * 12) * 10) / 10;
+    if (inch >= 12) { ft += 1; inch = 0; }   // rounding can tip 11.97 up to a full foot
+    return { ft, in: inch };
+  }
+  function feetInchesToCm(ft, inch) {
+    return ((Number(ft) || 0) * 12 + (Number(inch) || 0)) * CM_PER_INCH;
+  }
+  function fmtFeetInches(cm) {
+    const { ft, in: inch } = cmToFeetInches(cm);
+    const shown = Number.isInteger(inch) ? inch : inch.toFixed(1);
+    return `${ft}' ${shown}"`;
+  }
+
   // ---------------- Settings ----------------
 
   const DEFAULT_SETTINGS = {
@@ -228,6 +247,9 @@
     fromDisplayWeight,
     toDisplayHeight,
     fromDisplayHeight,
+    cmToFeetInches,
+    feetInchesToCm,
+    fmtFeetInches,
     getSettings,
     setSetting,
     getLatestEntry,

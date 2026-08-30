@@ -9,7 +9,7 @@
     openDialog, openSheet, typedConfirm, simpleConfirm, freshViewPool } = FatterUICore;
   const { getSettings, setSetting, getAllEntriesSorted, getPhoto, clearAll,
     toDisplayWeight, fromDisplayWeight, toDisplayHeight, fromDisplayHeight,
-    getStorageEstimate } = FatterDB;
+    getStorageEstimate, fmtFeetInches, cmToFeetInches, feetInchesToCm } = FatterDB;
 
   async function renderSettings(root) {
     freshViewPool(); // this view has no photos of its own, but keep the convention: revoke whatever the previously-rendered view left pooled
@@ -42,7 +42,8 @@
           <div class="settings-row" id="btn-height" style="cursor:pointer">
             <div class="settings-row__label">Height</div>
             <div class="row" style="gap:6px">
-              <span class="text-secondary">${settings.heightCm != null ? fmtHeight(toDisplayHeight(settings.heightCm, settings.unit)) + ' ' + (settings.unit === 'lb' ? 'in' : 'cm') : 'Not set'}</span>
+              <span class="text-secondary">${settings.heightCm == null ? 'Not set'
+                : (settings.unit === 'lb' ? fmtFeetInches(settings.heightCm) : fmtHeight(settings.heightCm) + ' cm')}</span>
               <svg class="icon" style="width:16px;height:16px;color:var(--text-tertiary)" viewBox="0 0 24 24"><use href="#icon-chevron"/></svg>
             </div>
           </div>
@@ -122,7 +123,7 @@
       </div>
 
       <p class="text-tertiary" style="font-size:11px;text-align:center;line-height:1.6;margin-top:24px">
-        Your photos and weights never leave this device.<br>Fatter v1.0.0
+        Your photos and weights never leave this device.<br><span id="app-version">Fatter</span>
       </p>`;
 
     root.querySelector('#unit-toggle').addEventListener('click', async (e) => {
@@ -158,14 +159,32 @@
       });
     });
     root.querySelector('#btn-height').addEventListener('click', () => {
-      const heightUnit = settings.unit === 'lb' ? 'in' : 'cm';
-      const currentDisplay = settings.heightCm != null ? fmtHeight(toDisplayHeight(settings.heightCm, settings.unit)) : '';
+      // Imperial gets two fields, feet and inches, because that is how people
+      // actually know their height. A single "inches" box asking for 67 is
+      // a conversion the user should not have to do in their head.
+      const imperial = settings.unit === 'lb';
+      const fi = settings.heightCm != null ? cmToFeetInches(settings.heightCm) : null;
+      const currentCm = settings.heightCm != null ? fmtHeight(settings.heightCm) : '';
       const el = h(`<div>
         <div class="sheet__title" style="margin-bottom:16px">Height</div>
         <div class="field">
-          <label class="field__label">Height (${heightUnit})</label>
-          <input id="height-input" class="input input--numeric" type="number" inputmode="decimal" step="0.1" min="0" max="300" placeholder="e.g. ${heightUnit === 'cm' ? '170' : '67'}" value="${currentDisplay}">
-          <div class="field__hint"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>Used only to show your BMI, a rough measure that doesn't account for muscle, frame, or age.</div>
+          ${imperial ? `
+            <label class="field__label">Height</label>
+            <div class="row" style="gap:10px;align-items:flex-end">
+              <div style="flex:1">
+                <input id="height-ft" class="input input--numeric" type="number" inputmode="numeric" step="1" min="0" max="8" placeholder="5" value="${fi ? fi.ft : ''}">
+                <div class="text-tertiary" style="font-size:11px;margin-top:4px;text-align:center">feet</div>
+              </div>
+              <div style="flex:1">
+                <input id="height-in" class="input input--numeric" type="number" inputmode="decimal" step="0.5" min="0" max="11.9" placeholder="7" value="${fi ? fi.in : ''}">
+                <div class="text-tertiary" style="font-size:11px;margin-top:4px;text-align:center">inches</div>
+              </div>
+            </div>
+          ` : `
+            <label class="field__label">Height (cm)</label>
+            <input id="height-input" class="input input--numeric" type="number" inputmode="decimal" step="0.1" min="0" max="300" placeholder="e.g. 170" value="${currentCm}">
+          `}
+          <div class="field__hint" style="margin-top:10px"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>Used only to show your BMI, a rough measure that doesn't account for muscle, frame, or age.</div>
         </div>
         <div class="row" style="gap:8px;margin-top:8px">
           ${settings.heightCm != null ? '<button class="btn btn--ghost btn--block" data-act="clear" type="button">Clear height</button>' : ''}
@@ -173,20 +192,44 @@
         </div>
       </div>`);
       const { close } = openDialog(el);
-      const input = el.querySelector('#height-input');
-      preventWheelChange(input);
-      input.focus();
+      const inputs = [...el.querySelectorAll('input')];
+      inputs.forEach(preventWheelChange);
+      inputs[0].focus();
       el.querySelector('[data-act="clear"]')?.addEventListener('click', async () => {
         await setSetting('heightCm', null);
         close();
       });
       el.querySelector('[data-act="save"]').addEventListener('click', async () => {
-        const val = parseFloat(input.value);
-        if (!val || val <= 0 || val > parseFloat(input.max)) { toast('Enter a valid height.', { type: 'error' }); return; }
-        await setSetting('heightCm', fromDisplayHeight(val, settings.unit));
+        let cm;
+        if (imperial) {
+          const ft = parseFloat(el.querySelector('#height-ft').value);
+          const inch = parseFloat(el.querySelector('#height-in').value) || 0;
+          if (!(ft > 0) || ft > 8 || inch < 0 || inch >= 12) { toast('Enter a valid height.', { type: 'error' }); return; }
+          cm = feetInchesToCm(ft, inch);
+        } else {
+          const input = el.querySelector('#height-input');
+          const val = parseFloat(input.value);
+          if (!val || val <= 0 || val > parseFloat(input.max)) { toast('Enter a valid height.', { type: 'error' }); return; }
+          cm = val;
+        }
+        if (!(cm > 50 && cm < 260)) { toast('Enter a valid height.', { type: 'error' }); return; }
+        await setSetting('heightCm', cm);
         close();
       });
     });
+    // Show the app version, plus the cache the service worker is actually
+    // serving from. The version alone was hardcoded and never bumped, so it
+    // could not answer "did my install update"; the cache name can.
+    (async () => {
+      const el = root.querySelector('#app-version');
+      if (!el || !global.FatterApp) return;
+      el.textContent = `Fatter v${global.FatterApp.APP_VERSION}`;
+      try {
+        const cache = await global.FatterApp.activeCacheVersion();
+        if (cache) el.textContent += ` (${cache})`;
+      } catch { /* offline or no controller yet; the version alone is fine */ }
+    })();
+
     root.querySelector('#theme-toggle').addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-val]'); if (!btn) return;
       await setSetting('theme', btn.dataset.val);
