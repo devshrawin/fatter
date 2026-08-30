@@ -72,6 +72,11 @@
     onboarded: false,
     goalWeightKg: null, // canonical kg, like entry weights, converted at display time
     heightCm: null, // canonical cm. Powers BMI; adult height treated as constant over time
+    // How height is shown and entered: 'cm' or 'ftin'. Deliberately its own
+    // setting rather than following the weight unit, because plenty of people
+    // weigh themselves in kg and still describe their height in feet and
+    // inches. null means "follow the weight unit" for anyone who never picks.
+    heightUnit: null,
     lastNudgeShownDate: null, // caps the "log today?" banner at once per calendar day
   };
 

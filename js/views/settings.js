@@ -11,6 +11,14 @@
     toDisplayWeight, fromDisplayWeight, toDisplayHeight, fromDisplayHeight,
     getStorageEstimate, fmtFeetInches, cmToFeetInches, feetInchesToCm } = FatterDB;
 
+  // Which way height should be shown and entered. An explicit choice always
+  // wins; otherwise fall back to whatever the weight unit implies, so someone
+  // who never opens the picker still gets a sensible default.
+  function heightModeOf(settings) {
+    if (settings.heightUnit === 'cm' || settings.heightUnit === 'ftin') return settings.heightUnit;
+    return settings.unit === 'lb' ? 'ftin' : 'cm';
+  }
+
   async function renderSettings(root) {
     freshViewPool(); // this view has no photos of its own, but keep the convention: revoke whatever the previously-rendered view left pooled
     const settings = await getSettings();
@@ -43,7 +51,7 @@
             <div class="settings-row__label">Height</div>
             <div class="row" style="gap:6px">
               <span class="text-secondary">${settings.heightCm == null ? 'Not set'
-                : (settings.unit === 'lb' ? fmtFeetInches(settings.heightCm) : fmtHeight(settings.heightCm) + ' cm')}</span>
+                : (heightModeOf(settings) === 'ftin' ? fmtFeetInches(settings.heightCm) : fmtHeight(settings.heightCm) + ' cm')}</span>
               <svg class="icon" style="width:16px;height:16px;color:var(--text-tertiary)" viewBox="0 0 24 24"><use href="#icon-chevron"/></svg>
             </div>
           </div>
@@ -159,31 +167,24 @@
       });
     });
     root.querySelector('#btn-height').addEventListener('click', () => {
-      // Imperial gets two fields, feet and inches, because that is how people
-      // actually know their height. A single "inches" box asking for 67 is
-      // a conversion the user should not have to do in their head.
-      const imperial = settings.unit === 'lb';
-      const fi = settings.heightCm != null ? cmToFeetInches(settings.heightCm) : null;
-      const currentCm = settings.heightCm != null ? fmtHeight(settings.heightCm) : '';
+      // Height carries its own cm / ft+in switch, right here in the dialog,
+      // instead of inheriting the weight unit. Tying the two together meant
+      // anyone weighing in kg simply could not enter their height in feet,
+      // and weighing in kg while thinking in feet and inches is completely
+      // ordinary.
+      let mode = heightModeOf(settings);
+      let cmValue = settings.heightCm;   // survives switching between modes
+
       const el = h(`<div>
-        <div class="sheet__title" style="margin-bottom:16px">Height</div>
+        <div class="row row--between" style="margin-bottom:14px;gap:10px">
+          <div class="sheet__title">Height</div>
+          <div class="segmented" id="height-unit-toggle" style="width:auto">
+            <button class="segmented__item" data-val="cm" type="button">cm</button>
+            <button class="segmented__item" data-val="ftin" type="button">ft / in</button>
+          </div>
+        </div>
         <div class="field">
-          ${imperial ? `
-            <label class="field__label">Height</label>
-            <div class="row" style="gap:10px;align-items:flex-end">
-              <div style="flex:1">
-                <input id="height-ft" class="input input--numeric" type="number" inputmode="numeric" step="1" min="0" max="8" placeholder="5" value="${fi ? fi.ft : ''}">
-                <div class="text-tertiary" style="font-size:11px;margin-top:4px;text-align:center">feet</div>
-              </div>
-              <div style="flex:1">
-                <input id="height-in" class="input input--numeric" type="number" inputmode="decimal" step="0.5" min="0" max="11.9" placeholder="7" value="${fi ? fi.in : ''}">
-                <div class="text-tertiary" style="font-size:11px;margin-top:4px;text-align:center">inches</div>
-              </div>
-            </div>
-          ` : `
-            <label class="field__label">Height (cm)</label>
-            <input id="height-input" class="input input--numeric" type="number" inputmode="decimal" step="0.1" min="0" max="300" placeholder="e.g. 170" value="${currentCm}">
-          `}
+          <div id="height-fields"></div>
           <div class="field__hint" style="margin-top:10px"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-info"/></svg>Used only to show your BMI, a rough measure that doesn't account for muscle, frame, or age.</div>
         </div>
         <div class="row" style="gap:8px;margin-top:8px">
@@ -191,29 +192,64 @@
           <button class="btn btn--primary btn--block" data-act="save" type="button">Save</button>
         </div>
       </div>`);
+
+      const fieldsEl = el.querySelector('#height-fields');
+      const toggleEl = el.querySelector('#height-unit-toggle');
+
+      // Read whatever the visible fields currently hold, in cm, so a value
+      // typed in one mode is not lost by switching to the other.
+      function readFields() {
+        if (mode === 'ftin') {
+          const ft = parseFloat(el.querySelector('#height-ft').value);
+          const inch = parseFloat(el.querySelector('#height-in').value) || 0;
+          if (!(ft >= 0) || Number.isNaN(ft)) return null;
+          return feetInchesToCm(ft, inch);
+        }
+        const v = parseFloat(el.querySelector('#height-input').value);
+        return Number.isFinite(v) ? v : null;
+      }
+
+      function renderFields() {
+        const fi = cmValue != null ? cmToFeetInches(cmValue) : null;
+        fieldsEl.innerHTML = mode === 'ftin' ? `
+          <div class="row" style="gap:10px;align-items:flex-start">
+            <div style="flex:1">
+              <input id="height-ft" class="input input--numeric" type="number" inputmode="numeric" step="1" min="0" max="8" placeholder="5" value="${fi ? fi.ft : ''}">
+              <div class="text-tertiary" style="font-size:11px;margin-top:4px;text-align:center">feet</div>
+            </div>
+            <div style="flex:1">
+              <input id="height-in" class="input input--numeric" type="number" inputmode="decimal" step="0.5" min="0" max="11.9" placeholder="7" value="${fi ? fi.in : ''}">
+              <div class="text-tertiary" style="font-size:11px;margin-top:4px;text-align:center">inches</div>
+            </div>
+          </div>` : `
+          <input id="height-input" class="input input--numeric" type="number" inputmode="decimal" step="0.1" min="0" max="300" placeholder="e.g. 170" value="${cmValue != null ? fmtHeight(cmValue) : ''}">
+          <div class="text-tertiary" style="font-size:11px;margin-top:4px">centimetres</div>`;
+        [...fieldsEl.querySelectorAll('input')].forEach(preventWheelChange);
+        toggleEl.querySelectorAll('.segmented__item').forEach((b) => b.classList.toggle('is-active', b.dataset.val === mode));
+        const first = fieldsEl.querySelector('input');
+        if (first) first.focus();
+      }
+
       const { close } = openDialog(el);
-      const inputs = [...el.querySelectorAll('input')];
-      inputs.forEach(preventWheelChange);
-      inputs[0].focus();
+      renderFields();
+
+      toggleEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-val]'); if (!btn || btn.dataset.val === mode) return;
+        const typed = readFields();
+        if (typed != null) cmValue = typed;   // carry the value across the switch
+        mode = btn.dataset.val;
+        renderFields();
+      });
+
       el.querySelector('[data-act="clear"]')?.addEventListener('click', async () => {
         await setSetting('heightCm', null);
         close();
       });
       el.querySelector('[data-act="save"]').addEventListener('click', async () => {
-        let cm;
-        if (imperial) {
-          const ft = parseFloat(el.querySelector('#height-ft').value);
-          const inch = parseFloat(el.querySelector('#height-in').value) || 0;
-          if (!(ft > 0) || ft > 8 || inch < 0 || inch >= 12) { toast('Enter a valid height.', { type: 'error' }); return; }
-          cm = feetInchesToCm(ft, inch);
-        } else {
-          const input = el.querySelector('#height-input');
-          const val = parseFloat(input.value);
-          if (!val || val <= 0 || val > parseFloat(input.max)) { toast('Enter a valid height.', { type: 'error' }); return; }
-          cm = val;
-        }
-        if (!(cm > 50 && cm < 260)) { toast('Enter a valid height.', { type: 'error' }); return; }
+        const cm = readFields();
+        if (cm == null || !(cm > 50 && cm < 260)) { toast('Enter a valid height.', { type: 'error' }); return; }
         await setSetting('heightCm', cm);
+        await setSetting('heightUnit', mode);   // remember how they like to enter it
         close();
       });
     });
