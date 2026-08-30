@@ -1,4 +1,4 @@
-// sw.js — service worker, at repo root so its scope covers the whole app
+// sw.js: service worker, at repo root so its scope covers the whole app
 // (a worker under /js/ can't control or cache index.html without a
 // Service-Worker-Allowed header, which GitHub Pages can't send).
 //
@@ -7,7 +7,7 @@
 // boots offline); everything else is cache-first (static assets don't change
 // without a new cache version).
 
-// Bump this on every deploy that changes a precached file — it's the ONLY
+// Bump this on every deploy that changes a precached file. It's the ONLY
 // thing that makes an existing install fetch anything new. Browsers decide
 // whether to run a new service-worker install purely by byte-diffing this
 // file, so if sw.js itself doesn't change, returning users keep whatever
@@ -15,10 +15,10 @@
 // firing. (This bit twice now: it sat at 'fatter-v1' through ~8 feature
 // commits before the first bump, then a whole second round of fixes to
 // chart.js/ui.js/export.js/image.js/ocr.js/style.css/index.html shipped
-// without a bump — existing installs kept running the pre-fix code the
+// without a bump, and existing installs kept running the pre-fix code the
 // entire time. Bump this EVERY time any precached file changes, no
 // exceptions, even for a "small" fix.)
-const CACHE_VERSION = 'fatter-v3';
+const CACHE_VERSION = 'fatter-v5';
 
 const PRECACHE_URLS = [
   './',
@@ -30,7 +30,13 @@ const PRECACHE_URLS = [
   './js/image.js',
   './js/chart.js',
   './js/export.js',
-  './js/ocr.js',
+  './js/sevenseg.js',
+  './js/ui-core.js',
+  './js/views/scale-reader.js',
+  './js/views/entry-form.js',
+  './js/views/dashboard.js',
+  './js/views/log-gallery.js',
+  './js/views/settings.js',
   './js/ui.js',
   './js/onboarding.js',
   './js/nudge.js',
@@ -44,7 +50,7 @@ const PRECACHE_URLS = [
   './icons/favicon-32.png',
   './icons/favicon.svg',
 ];
-// xlsx.full.min.js is intentionally NOT precached — it's lazy-loaded only
+// xlsx.full.min.js is intentionally NOT precached: it's lazy-loaded only
 // when the user taps "Download Excel", and gets cache-first treatment via
 // the fetch handler the first time it's actually requested.
 

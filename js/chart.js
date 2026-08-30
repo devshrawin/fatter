@@ -1,4 +1,4 @@
-// chart.js — stats computation and the Chart.js line chart. Uses a linear
+// chart.js: stats computation and the Chart.js line chart. Uses a linear
 // x-axis over epoch-ms (not the Chart.js "time" scale) so entries at
 // irregular dates space out proportionally without pulling in a date-adapter
 // dependency.
@@ -8,7 +8,7 @@
 
   // entries: sorted ascending by date, each { date, weightKg }.
   // Returns display-unit stats, or a zeroed/guarded shape when there's
-  // not enough data — never NaN/Infinity reaching the UI.
+  // not enough data. NaN/Infinity never reaches the UI.
   function computeStats(entries, unit) {
     const { toDisplayWeight } = FatterDB;
     if (!entries.length) {
@@ -36,7 +36,7 @@
   }
 
   // Consecutive calendar days (up to and including today) with at least one
-  // entry. Doesn't break until a full day is missed — if today has no entry
+  // entry. Doesn't break until a full day is missed. If today has no entry
   // yet, the streak still counts through yesterday rather than showing 0
   // the moment the clock ticks past midnight before you've logged.
   function computeStreak(entries) {
@@ -54,7 +54,7 @@
   }
 
   // entries: ascending by date. days: number of trailing days to keep, or
-  // 'all'. Used to scope the CHART to a recent window — the stat cards stay
+  // 'all'. Used to scope the CHART to a recent window; the stat cards stay
   // all-time regardless, same convention most progress-chart apps use.
   function filterEntriesByRange(entries, days) {
     if (days === 'all') return entries;
@@ -65,8 +65,8 @@
   // goalKg: canonical kg or null. stats: the object computeStats returned
   // (must have .current and .avgWeeklyChange in the same display unit).
   // Returns null when there's no goal or no data yet; otherwise a
-  // direction-neutral progress summary — "remaining" is always positive,
-  // an ETA is only included when the recent trend is actually headed
+  // direction-neutral progress summary: "remaining" is always positive,
+  // and an ETA is only included when the recent trend is actually headed
   // toward the goal (a flat or reversing trend gets no ETA, not a wrong one).
   function computeGoalProgress(stats, goalKg, unit) {
     if (goalKg == null || stats.current == null) return null;
@@ -76,7 +76,7 @@
 
     // Direction (losing vs gaining toward the goal) is inferred from where
     // the goal sits relative to the starting weight. Without this, someone
-    // who overshoots — e.g. keeps losing past a weight-loss goal — would see
+    // who overshoots (e.g. keeps losing past a weight-loss goal) would see
     // "X kg to go" grow forever instead of "Reached", since diff crosses
     // zero and its magnitude starts climbing again on the other side.
     const losingTowardGoal = goalDisplay <= stats.start;
@@ -93,8 +93,8 @@
     return { reached: false, remaining, goalDisplay, etaDate };
   }
 
-  // Adult WHO bands. BMI is a crude population-level measure — it doesn't
-  // account for muscle mass, frame, age, or sex — so this is shown as
+  // Adult WHO bands. BMI is a crude population-level measure. It doesn't
+  // account for muscle mass, frame, age, or sex, so this is shown as
   // informational context, never as a target to chase.
   const BMI_BANDS = [
     { max: 18.5, label: 'Underweight' },
@@ -128,8 +128,8 @@
   // opts.metric: 'weight' (default) | 'bmi'. opts.heightCm required for 'bmi'.
   //
   // Updates the existing Chart instance in place (chart.update('none')) when
-  // re-rendering onto the SAME canvas — e.g. the Weight/BMI and date-range
-  // toggles both call this repeatedly on one long-lived canvas. destroy()+
+  // re-rendering onto the SAME canvas (e.g. the Weight/BMI and date-range
+  // toggles both call this repeatedly on one long-lived canvas). destroy()+
   // new Chart() on every toggle tap tears down and rebuilds the canvas
   // context and restarts the entrance animation each time, which visibly
   // flickers on quick successive taps. A genuinely new canvas (a full
@@ -163,7 +163,7 @@
     }));
 
     // A linear scale has no natural tick range from a single x value (or a
-    // single repeated date) — Chart.js falls back to an arbitrary auto-range
+    // single repeated date). Chart.js falls back to an arbitrary auto-range
     // and produces nonsense date labels. Pin a small explicit window around
     // the lone point(s) instead.
     const xs = points.map((p) => p.x);
@@ -246,7 +246,7 @@
   }
 
   // Normalizes ANY valid CSS color (hex, oklch(), named, ...) to rgba() at the
-  // given alpha, via a canvas fillStyle round-trip — canvas 2D is spec-required
+  // given alpha, via a canvas fillStyle round-trip. Canvas 2D is spec-required
   // to accept all CSS Color 4 syntaxes and always reads fillStyle back as a
   // plain #hex/rgb()/rgba() string, regardless of how the color was authored.
   let normalizeCtx = null;

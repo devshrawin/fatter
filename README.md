@@ -6,15 +6,15 @@ line move.
 ## Privacy
 
 **All your photos and weight data never leave your device.** Fatter has no
-server, no account, and no cloud sync of any kind. Every entry — including
-photo blobs — is stored locally in your browser's IndexedDB (via
+server, no account, and no cloud sync of any kind. Every entry (including
+photo blobs) is stored locally in your browser's IndexedDB (via
 [Dexie.js](https://dexie.org)). Nothing is ever uploaded, and there is no
 analytics or tracking of any kind. Clearing your browser's site data for
-Fatter deletes it permanently — the app cannot recover it, because it never
+Fatter deletes it permanently. The app cannot recover it, because it never
 had a second copy.
 
-The only way your data leaves the device is if *you* explicitly export it —
-as an Excel file or a JSON backup — using the buttons in Settings.
+The only way your data leaves the device is if *you* explicitly export it
+(as an Excel file or a JSON backup) using the buttons in Settings.
 
 ## First run
 
@@ -22,7 +22,7 @@ The first time you open Fatter (and again any time you fully clear its data),
 a short 4-step intro runs: **Welcome → How it works → Everything stays on
 your device → Add to Home Screen** (skipped if you're already running the
 installed, standalone app). "Skip" jumps straight past all of it. The install
-step adapts to your platform — a real one-tap **Install** button on
+step adapts to your platform: a real one-tap **Install** button on
 Chrome/Android and desktop, manual step-by-step instructions on iOS Safari
 (which has no install API at all), and a generic pointer to the browser's own
 menu everywhere else. You can reopen the same install instructions any time
@@ -34,7 +34,7 @@ launch, first-run intro included.
 
 ## Running locally
 
-Service workers and IndexedDB require a real HTTP origin — opening
+Service workers and IndexedDB require a real HTTP origin. Opening
 `index.html` directly (`file://`) will not work.
 
 ```bash
@@ -44,7 +44,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
-Any other static file server works too (`npx serve`, `php -S`, etc.) — there
+Any other static file server works too (`npx serve`, `php -S`, etc.). There
 is no build step and nothing to install.
 
 ## Deploying to GitHub Pages
@@ -67,14 +67,14 @@ When you add a new entry, the weight field is pre-filled to save you a step:
 - **If you have previous entries**, it suggests your most recent weight.
 - **If this is your first entry**, the field is left empty with a placeholder.
 
-The suggested value is always just a starting point — it's clearly marked and
+The suggested value is always just a starting point: it's clearly marked and
 fully editable, and the moment you start typing, the "suggested" styling
 disappears since it's now your entered value.
 
 There's also an optional **"Vary suggested weight slightly"** toggle in
 Settings, off by default. When enabled, it adds a small random ±0.2–0.5
-variation to the suggestion instead of repeating your last weight exactly —
-some people find an identical number every time looks unrealistic. It's off
+variation to the suggestion instead of repeating your last weight exactly.
+Some people find an identical number every time looks unrealistic. It's off
 by default deliberately: this app logs your actual health data, and a
 suggested number should never be mistaken for something you measured.
 Nothing is ever saved until you tap Save, regardless of this setting.
@@ -84,32 +84,47 @@ Nothing is ever saved until you tap Save, regardless of this setting.
 Two more suggestions come from the photo you just picked, both on by default
 and both overridden the instant you edit the field they fill:
 
-- **Date** — if the photo has EXIF "date taken" metadata (basically any
+- **Date**: if the photo has EXIF "date taken" metadata (basically any
   camera photo), the date field defaults to that instead of today. Screenshots
   and photos without EXIF just fall back to today, as before.
-- **Weight** — Fatter tries to read the number off a scale or app display in
-  the photo, using an on-device OCR engine ([Tesseract.js](https://github.com/naptha/tesseract.js),
-  fully self-hosted, nothing uploaded). If it finds a plausible-looking weight,
-  it pre-fills the field and marks it "Read from photo — check it's correct."
-  If it doesn't find anything confident, the field just falls back to the
-  last-entry suggestion above — silently, no error.
+- **Weight**: pick a photo and a **Read from the scale** button appears under
+  the weight field. It opens your photo with a box over the display, already
+  positioned where Fatter thinks the numbers are. Drag the box over them and
+  the reading updates live, so you can see exactly what is being read before
+  you accept it. Tap **Use this** and it fills the weight field. Turn the
+  whole thing off in Settings ("Read weight from photo").
 
-  This was tuned against ~110 real photos (scale LCD/LED displays and
-  fitness-app screenshots), not just guessed at. The honest result: generic
-  OCR is genuinely bad at photographed 7-segment digital displays — bigger
-  Tesseract language models didn't fix it, only a tight, upright crop of the
-  display did. Rather than ship something that occasionally hands you a
-  confident-looking wrong number, the extraction is gated on Tesseract's own
-  recognition confidence — low-confidence reads are discarded instead of
-  shown, and a few rotations are tried automatically before giving up. That
-  means most raw scale photos correctly get *no* suggestion rather than a
-  wrong one; it does noticeably better on printed digits (app screenshots,
-  phone display overlays) and on photos where the display is upright and
-  fills more of the frame — the in-app **rotate button** on the photo preview
-  (available both when adding a new entry and when editing an existing one)
-  is the fastest way to help it along. Turn OCR off in
-  Settings ("Read weight from photo") if you'd rather skip the ~6 MB one-time
-  download or don't find it useful.
+### How the reading actually works
+
+Fatter does not use general-purpose OCR for this, because general-purpose OCR
+cannot do it. Tesseract is trained on printed type, and a seven-segment
+display is glowing bars with gaps between them. Measured on a real photo from
+this project: a perfectly cropped, upright, upscaled image of a display
+reading `142.7` came back as `"2"`. That is not a tuning problem, and a bigger
+model does not fix it either; a purpose-built seven-segment model still
+returned `146.7`.
+
+So instead of recognising a shape, Fatter decodes the geometry. A
+seven-segment digit is not really a glyph, it is a seven-bit code with only
+ten valid values, so once a digit is isolated you test which of the seven bars
+are lit and look the answer up. That is exact by construction, runs instantly,
+and needs **no model, no download and no network**. The whole reader is
+[`js/sevenseg.js`](js/sevenseg.js), a few hundred lines with no dependencies.
+
+Two deliberate choices worth knowing about:
+
+- **You position the box; Fatter never reads a photo unsupervised.** Finding a
+  display that can occupy under 1% of a cluttered photo is the genuinely hard
+  part, and automatic detection is not reliable enough to trust. When it lands
+  off the display, whatever marks it does find can still decode cleanly and
+  score high, so it hands back a *confident wrong number*. On a real photo of
+  a scale reading 142.7, the automatic crop confidently produced 111.1. A
+  wrong weight written into a health log is worse than no suggestion, so the
+  automatic guess only ever seeds the box you confirm.
+- **A reading has to be plausible as well as clear.** Every reading is checked
+  for a sane digit count and a value inside human bodyweight range for your
+  unit, on top of the per-digit confidence. Anything that fails is shown as
+  "no reading" rather than offered.
 
 ## Goal weight & BMI
 
@@ -117,36 +132,36 @@ Both optional, both set in Settings, both entirely local:
 
 - **Goal weight** adds a stat card showing how much is left and, only when
   your recent trend is actually heading toward it, a rough ETA. Direction-
-  neutral — it never assumes losing (or gaining) is "the" goal.
+  neutral: it never assumes losing (or gaining) is "the" goal.
 - **Height** unlocks a BMI stat card and a Weight/BMI toggle on the
-  dashboard chart. BMI is a crude population-level measure — it ignores
-  muscle mass, frame, age, and sex — so it's shown as context (with its
+  dashboard chart. BMI is a crude population-level measure that ignores
+  muscle mass, frame, age, and sex, so it's shown as context (with its
   standard WHO category label), not as something to optimize for.
 
 ## Streaks, chart range, and reminders
 
-- A **streak** stat card appears once you've logged at least one day —
+- A **streak** stat card appears once you've logged at least one day:
   consecutive calendar days with an entry, not reset by a day that just
   hasn't happened yet.
 - The dashboard chart has a **7d / 30d / 90d / All** toggle. It only scopes
-  the chart — the stat cards stay all-time, so a zoomed-in chart view can't
+  the chart; the stat cards stay all-time, so a zoomed-in chart view can't
   make your starting weight look like it moved.
 - If it's been a few days since your last entry, the dashboard shows a
   small dismissible reminder (one of ~15 rotating messages, at most once a
-  day). This is **not a push notification** — Fatter has no server to send
+  day). This is **not a push notification**. Fatter has no server to send
   one from, so it only ever appears while you actually have the app open,
   the same way the rest of the app works.
 
 ## Backup & restore
 
 - **Download Excel** (Settings) generates a real `.xlsx` with your full entry
-  log and a summary sheet — good for sharing with a coach or just having a
+  log and a summary sheet, good for sharing with a coach or just having a
   spreadsheet copy.
 - **Export full backup** generates a JSON file containing every entry, note,
   and photo, suitable for moving to a new device or just as a safety copy.
 - **Import backup** reads that JSON back in, either merging with what's
   already on the device or fully replacing it (replacing requires typing
-  `REPLACE` to confirm — it's irreversible).
+  `REPLACE` to confirm; it's irreversible).
 
 ## Limitations, honestly
 
@@ -156,7 +171,7 @@ Both optional, both set in Settings, both entirely local:
 - **Browser storage can be evicted.** Mobile browsers can clear IndexedDB
   under storage pressure if a site hasn't been granted persistent storage.
   Fatter requests persistent storage automatically, and Settings shows
-  whether it was granted — but no browser guarantees storage forever. Export
+  whether it was granted, but no browser guarantees storage forever. Export
   a backup occasionally if your data matters to you.
 - **iOS installed-PWA storage is its own thing.** Storage for a PWA added to
   the iOS home screen is generally more durable than a regular Safari tab, but
@@ -166,7 +181,7 @@ Both optional, both set in Settings, both entirely local:
   Safari (and any WebKit-based iOS browser) transparently converts these to
   JPEG when you pick them from a file input, so this is rarely visible on
   iPhone. Desktop Chrome/Firefox and most of Android have no built-in HEIC
-  decoder — if you hand Fatter a raw `.heic` file there, it will show a clear
+  decoder. If you hand Fatter a raw `.heic` file there, it will show a clear
   error asking you to convert it or take a new photo instead of silently
   failing.
 
@@ -180,29 +195,26 @@ versions in [`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt):
 | [Dexie.js](https://dexie.org) | 4.0.11 | Apache-2.0 | IndexedDB access |
 | [Chart.js](https://www.chartjs.org) | 4.4.7 | MIT | Progress line chart |
 | [SheetJS (xlsx)](https://sheetjs.com) | 0.18.5 | Apache-2.0 | Excel export |
-| [Tesseract.js](https://github.com/naptha/tesseract.js) — `tesseract.min.js`, `worker.min.js` | 5.1.1 | Apache-2.0 | On-device OCR engine + worker |
-| [tesseract.js-core](https://github.com/naptha/tesseract.js) — `tesseract-core-simd-lstm.wasm.js` | 5.1.1 | Apache-2.0 | WASM recognition core (self-contained, base64-embedded) |
-| [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) — `eng.traineddata.gz` | 4.0.0_fast | Apache-2.0 | English trained data (LSTM-only "fast" model, from a separate project/source than the tesseract.js files above) |
 
 Full pinned sources are in
-[`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt). The four Tesseract files
-(~6 MB total) are lazy-loaded only when a photo is picked and "Read weight
-from photo" is on — like SheetJS, they're never in the initial page load, and
-get cached by the service worker after first use.
+[`js/vendor/VERSIONS.txt`](js/vendor/VERSIONS.txt). SheetJS is lazy-loaded on
+the first Excel export rather than sitting in the startup path, and is cached
+after that. Reading the scale needs no library at all: it is plain geometry in
+[`js/sevenseg.js`](js/sevenseg.js).
 
 ## Project structure
 
 ```
 Fatter/
 ├── index.html          app shell + inline SVG icon sprite
-├── sw.js                service worker (root scope — see note in the file)
+├── sw.js                service worker (root scope; see note in the file)
 ├── manifest.json        PWA manifest
 ├── css/style.css         design tokens + all components, dark-first
 ├── js/
 │   ├── app.js           bootstrap, router, service worker, offline indicator
 │   ├── db.js            Dexie schema, CRUD, settings, backup/restore, quota handling
 │   ├── image.js         client-side compression, EXIF-orientation/date, HEIC handling
-│   ├── ocr.js            on-device weight-from-photo reading (Tesseract.js)
+│   ├── sevenseg.js       reads a seven-segment scale display, no model needed
 │   ├── chart.js         stats + Chart.js rendering
 │   ├── export.js        Excel export + JSON backup/restore
 │   ├── ui.js             views, modals, add/edit flow, toasts
@@ -213,9 +225,8 @@ Fatter/
 │       ├── chart.umd.min.js
 │       ├── xlsx.full.min.js
 │       ├── VERSIONS.txt          pinned versions, sources, licenses
-│       └── tesseract/            OCR engine, worker, WASM core, trained data
 ├── icons/               PWA icons (brand mark from the Claude Design handoff;
 │                         icons/logo.png is a gitignored local design source,
 │                         not part of the generated/shipped icon set)
-└── tools/make-icons.js  regenerates the icons — dev-only, not shipped
+└── tools/make-icons.js  regenerates the icons (dev-only, not shipped)
 ```

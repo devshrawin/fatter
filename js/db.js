@@ -1,4 +1,4 @@
-// db.js — IndexedDB access via Dexie. Single source of truth for all
+// db.js: IndexedDB access via Dexie. Single source of truth for all
 // persisted data. Nothing in this file talks to a network.
 //
 // Schema:
@@ -34,8 +34,8 @@
   const CM_PER_INCH = 2.54;
 
   // Height display follows the same unit setting as weight (cm alongside
-  // kg, inches alongside lb) — one unit toggle for the whole app, rather
-  // than a separate metric/imperial choice just for height.
+  // kg, inches alongside lb). There is one unit toggle for the whole app,
+  // rather than a separate metric/imperial choice just for height.
   function toDisplayHeight(cm, unit) {
     return unit === 'lb' ? cm / CM_PER_INCH : cm;
   }
@@ -48,11 +48,11 @@
   const DEFAULT_SETTINGS = {
     unit: 'kg',
     theme: 'system',
-    smartVariation: false, // default OFF — see plan notes: never fabricate a health number by default
+    smartVariation: false, // default OFF; see plan notes: never fabricate a health number by default
     ocrEnabled: true, // best-effort read of the weight off the photo; always editable, never trusted blindly
     onboarded: false,
-    goalWeightKg: null, // canonical kg, like entry weights — converted at display time
-    heightCm: null, // canonical cm — powers BMI; adult height treated as constant over time
+    goalWeightKg: null, // canonical kg, like entry weights, converted at display time
+    heightCm: null, // canonical cm. Powers BMI; adult height treated as constant over time
     lastNudgeShownDate: null, // caps the "log today?" banner at once per calendar day
   };
 
@@ -155,7 +155,7 @@
       await db.photos.clear();
       const settings = await db.settings.toArray();
       await db.settings.clear();
-      // preserve unit/theme preference across a full data clear — those are
+      // preserve unit/theme preference across a full data clear; those are
       // app preferences, not "data" in the sense the user is clearing.
       // 'onboarded' is deliberately NOT preserved: clearing all data resets
       // the device to a fresh-install state, so first-run onboarding runs
@@ -175,7 +175,7 @@
   function suggestWeightKg(latest, smartVariation) {
     if (!latest) return null;
     if (!smartVariation) return latest.weightKg;
-    // ±0.2–0.5 kg jitter, deterministic sign spread via Math.random (fine —
+    // ±0.2–0.5 kg jitter, deterministic sign spread via Math.random (fine:
     // this is cosmetic realism, not a value the user is asked to trust blindly;
     // the field is always editable and clearly marked as a suggestion).
     const magnitude = 0.2 + Math.random() * 0.3;

@@ -1,0 +1,101 @@
+<!-- Dev tool. Needs sample photos in _test-photos/ (gitignored, not shipped). -->
+<!doctype html>
+<meta charset="utf-8">
+<title>sevenseg lab</title>
+<body style="background:#111;color:#ddd;font:12px ui-monospace,monospace;margin:0;padding:8px">
+<div style="margin-bottom:8px">
+  <button id="run" style="padding:6px 12px">re-run</button>
+  <span id="summary" style="margin-left:12px"></span>
+</div>
+<div id="out" style="display:flex;flex-direction:column;gap:8px"></div>
+<script src="../js/sevenseg.js"></script>
+<script>
+// Hand-marked readout regions as fractions of the image, plus the value read
+// off the photo by eye. Isolates DECODING from LOCALIZATION.
+const CASES = [
+  { f:"CCCD27EA-1E70-4173-B313-E605D284B849.JPG", truth:"142.7", box:[0.39,0.567,0.25,0.077] },
+];
+const P = '../_test-photos/';
+
+function maskCanvas(mask,W,H,scale){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const x=c.getContext('2d'),im=x.createImageData(W,H);
+  for(let i=0;i<W*H;i++){const v=mask[i]?255:0;im.data[i*4]=v;im.data[i*4+1]=v;im.data[i*4+2]=v;im.data[i*4+3]=255;}
+  x.putImageData(im,0,0);c.style.height=(scale||120)+'px';c.style.imageRendering='pixelated';return c;
+}
+
+// Draw each detected digit with its seven zones overlaid, coloured by whether
+// that bar read as lit. This is the view that makes misalignment obvious.
+function digitOverlay(dec, scale){
+  const wrap=document.createElement('div');
+  wrap.style.cssText='display:flex;gap:6px;align-items:flex-start';
+  for(const d of dec.digits){
+    const box=document.createElement('div');
+    box.style.cssText='text-align:center';
+    const c=document.createElement('canvas');
+    c.width=d.w; c.height=d.h;
+    const x=c.getContext('2d');
+    const im=x.createImageData(d.w,d.h);
+    for(let yy=0;yy<d.h;yy++)for(let xx=0;xx<d.w;xx++){
+      const lit=dec.mask[(dec.baseTop+yy)*dec.W+(d.x0+xx)];
+      const i=(yy*d.w+xx)*4;
+      im.data[i]=lit?60:0; im.data[i+1]=lit?60:0; im.data[i+2]=lit?60:0; im.data[i+3]=255;
+    }
+    x.putImageData(im,0,0);
+    if(d.on){
+      for(const k in FatterSevenSeg.ZONES){
+        const z=FatterSevenSeg.ZONES[k], v=d.on[k];
+        x.fillStyle = v>0.5 ? 'rgba(0,255,90,0.45)' : 'rgba(255,60,60,0.20)';
+        x.fillRect(z[0]*d.w, z[1]*d.h, (z[2]-z[0])*d.w, (z[3]-z[1])*d.h);
+      }
+    }
+    c.style.height=(scale||120)+'px'; c.style.imageRendering='pixelated';
+    box.appendChild(c);
+    const cap=document.createElement('div');
+    cap.style.cssText='font-size:11px;color:#8f8';
+    cap.textContent=d.digit+(d.dot?'.':'')+' '+d.score.toFixed(2)+'/'+d.margin.toFixed(2);
+    box.appendChild(cap);
+    if(d.on){
+      const z=document.createElement('div');
+      z.style.cssText='font-size:9px;color:#888;white-space:pre';
+      z.textContent=Object.entries(d.on).map(([k,v])=>k+v.toFixed(1)[1]).join(' ');
+      box.appendChild(z);
+    }
+    wrap.appendChild(box);
+  }
+  return wrap;
+}
+
+async function run(){
+  const out=document.getElementById('out'); out.innerHTML='';
+  let pass=0;
+  for(const cse of CASES){
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #333;padding:6px 0';
+    out.appendChild(row);
+    try{
+      const bmp=await createImageBitmap(await (await fetch(P+cse.f)).blob(),{imageOrientation:'from-image'});
+      const [fx,fy,fw,fh]=cse.box;
+      const rect={x:fx*bmp.width,y:fy*bmp.height,w:fw*bmp.width,h:fh*bmp.height};
+      const r=FatterSevenSeg.readRegion(bmp,rect);
+      const good = r.ok && r.text.replace(/[^0-9.]/g,'')===cse.truth;
+      if(good) pass++;
+      const lbl=document.createElement('div');
+      lbl.style.cssText='width:170px;flex:none';
+      lbl.innerHTML=`<b>${cse.f.slice(0,12)}</b><br>truth <b>${cse.truth}</b><br>`+
+        (r.ok?`got <span style="color:${good?'#6f6':'#f66'};font-size:16px">${r.text}</span><br>`+
+              `score ${r.score.toFixed(2)} margin ${r.margin.toFixed(2)}<br>`+
+              `<span style="color:${r.confident?'#6f6':'#fa0'}">${r.confident?'confident':'below threshold'}</span>`
+             :`<span style="color:#f66">${r.reason}</span>`);
+      row.appendChild(lbl);
+      if(r.crop){ r.crop.style.height='120px'; r.crop.style.imageRendering='pixelated'; row.appendChild(r.crop); }
+      if(r.debug){ row.appendChild(maskCanvas(r.debug.mask,r.debug.W,r.debug.H,120)); row.appendChild(digitOverlay(r.debug,120)); }
+      window.__LAST=r;
+    }catch(e){ row.textContent=cse.f+' ERROR '+e.message+' '+e.stack; }
+  }
+  document.getElementById('summary').textContent=`${pass}/${CASES.length} exact`;
+  window.__DONE=true;
+}
+document.getElementById('run').onclick=run;
+run();
+</script>

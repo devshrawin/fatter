@@ -1,4 +1,4 @@
-// export.js — Excel export (SheetJS, lazy-loaded) and full JSON backup/restore.
+// export.js: Excel export (SheetJS, lazy-loaded) and full JSON backup/restore.
 // SheetJS is ~860KB, so it's injected on first use rather than at startup.
 
 (function (global) {
@@ -52,10 +52,10 @@
 
     const summaryRows = [
       ['Metric', 'Value'],
-      ['Starting weight', stats.start != null ? `${round1(stats.start)} ${unit}` : '—'],
-      ['Current weight', stats.current != null ? `${round1(stats.current)} ${unit}` : '—'],
-      ['Total change', stats.totalChange != null ? `${signed(round1(stats.totalChange))} ${unit}` : '—'],
-      ['Avg weekly change', stats.avgWeeklyChange != null ? `${signed(round1(stats.avgWeeklyChange))} ${unit}/wk` : '—'],
+      ['Starting weight', stats.start != null ? `${round1(stats.start)} ${unit}` : 'N/A'],
+      ['Current weight', stats.current != null ? `${round1(stats.current)} ${unit}` : 'N/A'],
+      ['Total change', stats.totalChange != null ? `${signed(round1(stats.totalChange))} ${unit}` : 'N/A'],
+      ['Avg weekly change', stats.avgWeeklyChange != null ? `${signed(round1(stats.avgWeeklyChange))} ${unit}/wk` : 'N/A'],
       ['Entries', stats.count],
       ['Exported', new Date().toLocaleString()],
     ];
@@ -128,7 +128,7 @@
     return new Blob([bytes], { type });
   }
 
-  // photosById: optional Map<entryId, photo> — the Settings "Export full
+  // photosById: optional Map<entryId, photo>. The Settings "Export full
   // backup" flow calls this and buildBackup back-to-back on the same entry
   // list, so the caller fetches every photo once and passes the map to both
   // instead of each function re-querying IndexedDB independently.
@@ -183,10 +183,11 @@
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   // Beyond the top-level shape, each entry's date/weightKg used to go
-  // unvalidated — a hand-edited or corrupted backup would import "successfully"
-  // and then render literal "NaN" (Log/Dashboard weight) or "Invalid Date"
-  // (Log/detail sheet date) for that row with no error ever surfaced.
-  // Rejecting up front is safer than importing corrupted rows silently.
+  // unvalidated. A hand-edited or corrupted backup would import
+  // "successfully" and then render literal "NaN" (Log/Dashboard weight) or
+  // "Invalid Date" (Log/detail sheet date) for that row with no error ever
+  // surfaced. Rejecting up front is safer than importing corrupted rows
+  // silently.
   function validateBackup(obj) {
     if (!obj || obj.format !== BACKUP_FORMAT) throw new Error('This file is not a Fatter backup.');
     if (typeof obj.version !== 'number' || obj.version > BACKUP_VERSION) throw new Error('This backup was made by a newer version of Fatter.');

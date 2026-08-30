@@ -1,4 +1,4 @@
-// onboarding.js — first-run intro flow (welcome / how it works / privacy /
+// onboarding.js: first-run intro flow (welcome / how it works / privacy /
 // add-to-home-screen), plus the standalone "Add to Home Screen" screen the
 // same install content renders into when reopened from Settings.
 //
@@ -7,7 +7,7 @@
 // beforeinstallprompt), so it gets manual steps; Chrome/Android/desktop get
 // a real "Install" button wired to the captured native prompt; anything else
 // gets a generic pointer to the browser's own menu. A user already running
-// the installed, standalone app skips the install step entirely — there's
+// the installed, standalone app skips the install step entirely; there's
 // nothing to prompt them for.
 
 (function (global) {
@@ -15,7 +15,7 @@
 
   // beforeinstallprompt can fire before this script's IIFE finishes
   // evaluating, so the listener is attached at top-level (script parse time)
-  // rather than inside a later function — attaching it late would miss the
+  // rather than inside a later function. Attaching it late would miss the
   // event on the one visit that actually matters.
   let deferredInstallPrompt = null;
   window.addEventListener('beforeinstallprompt', (e) => {
@@ -81,14 +81,14 @@
       return `<div class="onboarding-body">
         ${BRAND_ICON}
         <div class="onboarding-title">Install Fatter</div>
-        <div class="onboarding-text">Get quick access from your home screen — no browser address bar, works offline once installed.</div>
+        <div class="onboarding-text">Get quick access from your home screen: no browser address bar, and it works offline once installed.</div>
       </div>`;
     }
     return `<div class="onboarding-body">
       ${BRAND_ICON}
       <div class="onboarding-title">Add Fatter to your Home Screen</div>
-      <div class="onboarding-text" style="margin-bottom:var(--sp-4)">This browser doesn't offer a one-tap install here — but you can still add Fatter from its menu.</div>
-      <div class="onboarding-text">Look for <b style="color:var(--text-primary)">Install Fatter</b>, <b style="color:var(--text-primary)">Add to Home Screen</b>, or <b style="color:var(--text-primary)">Add to Dock</b> — the exact wording depends on your browser.</div>
+      <div class="onboarding-text" style="margin-bottom:var(--sp-4)">This browser doesn't offer a one-tap install here, but you can still add Fatter from its menu.</div>
+      <div class="onboarding-text">Look for <b style="color:var(--text-primary)">Install Fatter</b>, <b style="color:var(--text-primary)">Add to Home Screen</b>, or <b style="color:var(--text-primary)">Add to Dock</b>. The exact wording depends on your browser.</div>
     </div>`;
   }
 
@@ -102,7 +102,7 @@
       await deferredInstallPrompt.prompt();
       await deferredInstallPrompt.userChoice;
     } catch {
-      // ignore — user closing the native prompt isn't an error
+      // ignore: user closing the native prompt isn't an error
     } finally {
       deferredInstallPrompt = null;
     }
@@ -167,7 +167,7 @@
           ${BRAND_ICON}
           <div style="font-size:var(--fs-label);font-weight:700;color:var(--accent);letter-spacing:0.14em;margin-bottom:var(--sp-3)">WELCOME TO</div>
           <div style="font-size:36px;font-weight:700;color:var(--text-primary);margin-bottom:var(--sp-4)">Fatter</div>
-          <div class="onboarding-text">A simple way to see your progress take shape — one photo and one number at a time.</div>
+          <div class="onboarding-text">A simple way to see your progress take shape, one photo and one number at a time.</div>
         </div>`;
         nextBtn.textContent = 'Next';
       } else if (step === 'howitworks') {
@@ -185,7 +185,7 @@
         slot.innerHTML = `<div class="onboarding-body">
           ${BRAND_ICON}
           <div class="onboarding-title">Everything stays<br>on your device</div>
-          <div class="onboarding-text">Fatter stores every photo and weight entry only on this device. No account, no server, no upload — ever.</div>
+          <div class="onboarding-text">Fatter stores every photo and weight entry only on this device. No account, no server, no upload, ever.</div>
         </div>`;
         nextBtn.textContent = skipInstallStep ? 'Start using Fatter' : 'Next';
       } else if (step === 'install') {

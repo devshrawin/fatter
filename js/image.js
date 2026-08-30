@@ -1,4 +1,4 @@
-// image.js — client-side image compression. Takes a File from the photo
+// image.js: client-side image compression. Takes a File from the photo
 // picker and produces two small blobs (full + thumbnail) ready for
 // IndexedDB. Nothing here ever leaves the device.
 
@@ -32,7 +32,7 @@
   // normally arrive already decodable. Desktop Chrome/Firefox and most of
   // Android have no native HEIC decoder, so a raw .heic file (e.g. AirDropped
   // to a Mac, then picked in a non-Safari browser) will fail both decode
-  // paths below — that's a real format gap, not a bug, so it's surfaced as
+  // paths below. That's a real format gap, not a bug, so it's surfaced as
   // a specific, actionable error rather than a silent broken image.
   async function loadOriented(file) {
     if (typeof createImageBitmap === 'function') {
@@ -55,10 +55,10 @@
     } catch {
       if (looksLikeHeic(file)) {
         throw new UnsupportedImageError(
-          "This browser can't open HEIC/HEIF photos. On iPhone, choosing it in Safari usually works — otherwise convert it to JPEG first, or take a new photo with the camera option."
+          "This browser can't open HEIC/HEIF photos. On iPhone, choosing it in Safari usually works. Otherwise, convert it to JPEG first, or take a new photo with the camera option."
         );
       }
-      throw new UnsupportedImageError("Couldn't read this photo — the file may be corrupted or in an unsupported format.");
+      throw new UnsupportedImageError("Couldn't read this photo. The file may be corrupted or in an unsupported format.");
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -101,7 +101,7 @@
   }
 
   // Rotates an already-decoded bitmap by a multiple of 90°, re-encoding at
-  // the given quality. Does NOT close the bitmap — callers that decode once
+  // the given quality. Does NOT close the bitmap; callers that decode once
   // and try several rotations (ocr.js's rotation search) own that lifecycle.
   async function rotateFromBitmap(bitmap, degrees, quality, type) {
     const swap = ((degrees % 180) + 180) % 180 !== 0;
@@ -117,7 +117,7 @@
   }
 
   // Rotates an already-compressed blob by a multiple of 90°, re-encoding at
-  // the given quality. Used for the user-facing "rotate photo" control —
+  // the given quality. Used for the user-facing "rotate photo" control:
   // real photos routinely come out sideways with no usable EXIF fix, so a
   // manual override is the only reliable escape hatch.
   async function rotateBlob(blob, degrees, quality, type) {
@@ -206,8 +206,8 @@
   // iOS Safari transcodes HEIC to JPEG (preserving EXIF) before handing the
   // File to the page, so this covers the common phone-camera case even though
   // it only parses the JPEG/EXIF container. PNG screenshots and any file
-  // without a readable EXIF block simply resolve to null — the date field
-  // then falls back to today, exactly as before this feature existed.
+  // without a readable EXIF block simply resolve to null, and the date
+  // field then falls back to today, exactly as before this feature existed.
   const EXIF_TAG_DATETIME = 0x0132;
   const EXIF_TAG_DATETIME_ORIGINAL = 0x9003;
   const EXIF_TAG_SUBIFD_POINTER = 0x8769;
@@ -273,7 +273,7 @@
         const marker = dv.getUint16(offset);
         if ((marker & 0xff00) !== 0xff00) break;
         if (marker === 0xffd8 || marker === 0xffd9) { offset += 2; continue; }
-        if (marker === 0xffda) break; // start of scan — no more APPn markers follow
+        if (marker === 0xffda) break; // start of scan; no more APPn markers follow
         const segLength = dv.getUint16(offset + 2);
         if (marker === 0xffe1 && offset + 4 + 6 <= dv.byteLength) {
           const sig = readAsciiString(dv, offset + 4, 4);
@@ -296,7 +296,7 @@
       }
       return null;
     } catch {
-      return null; // best-effort — any parse hiccup just means "no date suggestion"
+      return null; // best-effort: any parse hiccup just means "no date suggestion"
     }
   }
 

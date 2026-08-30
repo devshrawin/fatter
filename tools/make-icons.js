@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Generates PNG app icons from the brand mark chosen in Claude Design
-// (Fatter.dc.html, section 11 — "Concept A": an ascending step-line that
+// (Fatter.dc.html, section 11, "Concept A": an ascending step-line that
 // doubles as the stem+bars of an "F"). Uses only Node's built-in zlib plus
-// a minimal raw PNG encoder — no canvas dependency. Re-run after any brand
+// a minimal raw PNG encoder: no canvas dependency. Re-run after any brand
 // color or mark change.
 //
 // Usage: node tools/make-icons.js
@@ -15,7 +15,7 @@ const zlib = require('zlib');
 const OUT_DIR = path.join(__dirname, '..', 'icons');
 
 // From the design handoff (oklch(16% 0 0) surface / oklch(72% .14 155) accent),
-// converted to sRGB — see the conversion in PLAN notes. Keep in sync with the
+// converted to sRGB (see the conversion in PLAN notes). Keep in sync with the
 // --surface / --accent tokens in css/style.css.
 const BG = [0x0d, 0x0d, 0x0d];
 const ACCENT = [0x4e, 0xbe, 0x7d];
@@ -45,7 +45,7 @@ function chunk(type, data) {
   return Buffer.concat([len, typeBuf, data, crcBuf]);
 }
 
-// Anti-aliased circle stamp — used for round line-caps/joins and the accent dot.
+// Anti-aliased circle stamp, used for round line-caps/joins and the accent dot.
 function paintCircle(px, size, cx, cy, r, color) {
   const x0 = Math.max(0, Math.floor(cx - r - 1)), x1 = Math.min(size - 1, Math.ceil(cx + r + 1));
   const y0 = Math.max(0, Math.floor(cy - r - 1)), y1 = Math.min(size - 1, Math.ceil(cy + r + 1));
@@ -147,7 +147,7 @@ writeIcon('apple-touch-icon-180.png', 180);
 writeIcon('favicon-32.png', 32);
 writeIcon('favicon-16.png', 16);
 
-// Vector favicon (crisp at any size) — same mark, monochrome stroke as
+// Vector favicon (crisp at any size): same mark, monochrome stroke as
 // specified for the smallest sizes in the design (favicon 16/32 → mono).
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect width="32" height="32" rx="7" fill="#0d0d0d"/>

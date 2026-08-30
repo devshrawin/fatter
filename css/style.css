@@ -1,9 +1,9 @@
 /* ============================================================
-   Fatter — design tokens + components
+   Fatter design tokens + components
    Values below are the literal handoff from the Claude Design pass
-   (Fatter.dc.html, section 13 — Handoff note). True-neutral grays
+   (Fatter.dc.html, section 13, Handoff note). True-neutral grays
    (0 chroma) so dark/light read as one app; single accent hue (155)
-   used identically for both delta directions — see the ".delta" rule.
+   used identically for both delta directions (see the ".delta" rule).
    ============================================================ */
 
 :root {
@@ -220,7 +220,7 @@ img { max-width: 100%; display: block; }
 .btn--ghost { background: transparent; color: var(--text-primary); }
 .btn--ghost:hover { background: var(--surface-raised); }
 /* Outline destructive: used for a non-final destructive action (e.g. Delete
-   inside the entry detail sheet) — the loud solid red is reserved for the
+   inside the entry detail sheet). The loud solid red is reserved for the
    actual point of no return. */
 .btn--destructive { background: transparent; color: var(--danger); border-color: color-mix(in oklch, var(--danger) 50%, transparent); }
 .btn--destructive:hover { background: color-mix(in oklch, var(--danger) 10%, transparent); }
@@ -309,8 +309,9 @@ img { max-width: 100%; display: block; }
 .stat-card--hero .stat-card__value { font-size: var(--fs-display); }
 .stat-card__unit { font-size: var(--fs-label); color: var(--text-secondary); font-weight: 500; margin-left: 4px; }
 
-/* Delta indicator: ALWAYS the same accent color in both directions — gaining
-   is not "bad" here. Direction is carried only by the ▲/▼ glyph, never color. */
+/* Delta indicator: ALWAYS the same accent color in both directions, because
+   gaining is not "bad" here. Direction is carried only by the ▲/▼ glyph,
+   never color. */
 .delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
 .delta--flat { color: var(--text-tertiary); }
 .delta__arrow { font-size: 0.85em; }
@@ -391,7 +392,7 @@ img { max-width: 100%; display: block; }
 .modal-overlay.is-open .modal-dialog { transform: scale(1); opacity: 1; }
 .modal-overlay:has(.modal-dialog) { align-items: center; }
 
-/* Full-screen "form" sheet — used specifically for Add/Edit entry, matching
+/* Full-screen "form" sheet, used specifically for Add/Edit entry, matching
    the design's page-modal pattern (Cancel / title / Save top bar) rather
    than the drag-handle bottom sheet used everywhere else. */
 .sheet--form {
@@ -425,7 +426,7 @@ img { max-width: 100%; display: block; }
 .onboarding-top {
   flex: none; display: flex; justify-content: flex-end;
   /* env(safe-area-inset-top) resolves to 0 on most Android devices (no
-     notch concept the same way iOS has) and on plain non-notched phones —
+     notch concept the same way iOS has) and on plain non-notched phones, so
      relying on it alone left the Skip row sitting right at the very top
      of the screen there. max() guarantees real breathing room everywhere,
      while still growing further on an actual notch/dynamic-island. */

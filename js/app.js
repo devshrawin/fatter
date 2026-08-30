@@ -1,4 +1,4 @@
-// app.js — bootstrap, hash router, service worker registration, offline
+// app.js: bootstrap, hash router, service worker registration, offline
 // indicator, theme application. This is the only file that talks to the
 // service worker; everything else here is wiring, not business logic.
 
@@ -40,8 +40,8 @@
     if (theme === 'dark' || theme === 'light') root.dataset.theme = theme;
     else delete root.dataset.theme;
 
-    // These two meta tags were hardcoded for the dark theme and never updated
-    // — switching to Light left the iOS status bar glyphs (black-translucent
+    // These two meta tags were hardcoded for the dark theme and never updated.
+    // Switching to Light left the iOS status bar glyphs (black-translucent
     // draws them white) invisible against the now-light content behind them,
     // and the Android address-bar tint stayed black against a white page.
     const isDark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -121,16 +121,29 @@
     applyTheme(settings.theme);
 
     FatterUI.initGlobalHandlers();
-    window.addEventListener('fatter:refresh', renderRoute);
     window.addEventListener('hashchange', renderRoute);
     window.addEventListener('online', updateOfflinePill);
     window.addEventListener('offline', updateOfflinePill);
     updateOfflinePill();
 
     if (!location.hash) location.hash = `#/${DEFAULT_ROUTE}`;
-    await renderRoute();
 
-    // Only relevant while the setting is 'system' — applyTheme() itself
+    // Re-renders the current route automatically whenever entries or
+    // settings change anywhere in the app (save, edit, delete, import, any
+    // Settings toggle). Replaces the old 'fatter:refresh' CustomEvent that
+    // every single mutation site used to have to remember to dispatch by
+    // hand (a real, repeatedly-forgotten source of bugs). Dexie's liveQuery
+    // tracks which tables the querier touches and only re-runs it (and
+    // fires this subscription) when one of those tables actually changes.
+    // It also emits once immediately on subscribe, which is what performs
+    // the very first render; no separate explicit renderRoute() call needed.
+    Dexie.liveQuery(() => Promise.all([FatterDB.getSettings(), FatterDB.getAllEntriesSorted()]))
+      .subscribe({
+        next: renderRoute,
+        error: (err) => console.error('liveQuery error', err),
+      });
+
+    // Only relevant while the setting is 'system'; applyTheme() itself
     // re-checks matchMedia every call, this just re-triggers it when the OS
     // flips light/dark out from under an already-open tab.
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -139,7 +152,7 @@
 
     FatterOnboarding.maybeShow(settings);
 
-    // Requested only after the app has rendered successfully — asking for
+    // Requested only after the app has rendered successfully. Asking for
     // persistence before the user has done anything real just adds a permission
     // prompt with no context.
     FatterDB.requestPersistence();
