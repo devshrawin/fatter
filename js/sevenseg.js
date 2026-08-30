@@ -332,9 +332,24 @@
       }
       let res;
       // "1" is the one digit with no horizontal bar, so it is far narrower
-      // than the rest and is identified by shape before scoring.
-      if (w / digitH < 0.34) res = { digit: '1', score: 0.95, margin: 0.5, on: null, narrow: true };
-      else res = classify(sub, w, digitH);
+      // than the rest and cannot be scored against the zone layout, which
+      // assumes a full-width cell. It still has to EARN its score rather than
+      // be handed one: any thin vertical mark (a table edge, a shadow, the
+      // gap between two toes) is narrow, and asserting high confidence for
+      // narrowness alone turns those into a confident "111". So measure how
+      // much this really looks like a single full-height solid bar.
+      if (w / digitH < 0.34) {
+        let lit = 0;
+        const rowHit = new Uint8Array(digitH);
+        for (let y = 0; y < digitH; y++) for (let x = 0; x < w; x++) {
+          if (sub[y * w + x]) { lit++; rowHit[y] = 1; }
+        }
+        let rows = 0; for (let y = 0; y < digitH; y++) if (rowHit[y]) rows++;
+        const coverage = rows / digitH;              // a bar spans the full cell height
+        const solidity = lit / Math.max(1, w * digitH); // and is filled, not wispy
+        const score = 0.5 * coverage + 0.5 * Math.min(1, solidity / 0.75);
+        res = { digit: '1', score, margin: Math.max(0, (score - 0.75) * 2), on: null, narrow: true };
+      } else res = classify(sub, w, digitH);
       digits.push({ ...res, x0: r.x0, x1: r.x1, w, h: digitH, dot: dotAfter.has(i) });
     }
     if (!digits.length) return null;
@@ -348,7 +363,15 @@
 
   // ---------------- public API ----------------
 
-  const MIN_SCORE = 0.86;   // mean per-bar agreement across the digits
+  // Calibrated against real photos rather than picked by feel. The useful
+  // signal turned out to be MARGIN, not score: a correct reading of a display
+  // showing 142.7 scores 0.83, while wrong readings pulled from crops that
+  // missed the display entirely score as high as 0.88. What separates them is
+  // that a correct digit beats its runner-up clearly, whereas a digit decoded
+  // out of noise sits almost tied between two candidates (margins of 0.01 to
+  // 0.02). So the score bar is set low enough not to reject correct readings,
+  // and the margin does the actual work.
+  const MIN_SCORE = 0.80;   // mean per-bar agreement across the digits
   const MIN_MARGIN = 0.06;  // worst digit must still clearly beat its runner-up
 
   // Reads the readout inside `rect` (pixel coords in the source image). The
