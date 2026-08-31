@@ -128,29 +128,56 @@
     return new Blob([bytes], { type });
   }
 
-  // photosById: optional Map<entryId, photo>. The Settings "Export full
-  // backup" flow calls this and buildBackup back-to-back on the same entry
-  // list, so the caller fetches every photo once and passes the map to both
-  // instead of each function re-querying IndexedDB independently.
-  async function estimateBackupSize(entries, photosById) {
-    let total = 0;
-    for (const e of entries) {
-      if (!e.hasPhoto) continue;
-      const photo = photosById ? photosById.get(e.id) : await FatterDB.getPhoto(e.id);
-      if (photo) total += (photo.blob?.size || 0) + (photo.thumbBlob?.size || 0);
-    }
-    return Math.round(total * 1.37); // base64 overhead
+  // Sums stored photo bytes straight off the photos table, without
+  // materialising a Map of every photo row first. Applying the base64
+  // overhead here gives the size of the file that will actually be written.
+  async function estimateBackupSize(includePhotos = true) {
+    if (!includePhotos) return 0;
+    const bytes = await FatterDB.getPhotoBytes();
+    return Math.round(bytes * 1.37); // base64 overhead
   }
 
-  async function buildBackup(entries, settings, photosById) {
-    const out = {
+  // Number of entries encoded between Blob flushes. Small enough that the
+  // JS heap only ever holds a handful of base64 photos, large enough that
+  // a photo-free backup is not thousands of Blob constructions.
+  const FLUSH_EVERY = 8;
+
+  // Writes the backup straight into a Blob, flushing every few entries.
+  //
+  // This used to build one plain object holding every photo as a base64 data
+  // URL and then JSON.stringify it. Both the object graph and the resulting
+  // string sat in the JS heap at once, at roughly 1.37x the raw photo bytes
+  // each: a 300 MB photo library needed the better part of a gigabyte of
+  // heap to export, and mobile Safari kills the tab well before that. Since
+  // IndexedDB is the ONLY copy of the user's data, an export that dies at
+  // scale is the worst possible failure in this app.
+  //
+  // Blob parts are references, not copies, and the browser is free to keep
+  // them on disk, so accumulating into a Blob keeps peak heap flat at a few
+  // photos regardless of library size.
+  //
+  // onProgress is called with (done, total) so the caller can show progress
+  // on what is now a genuinely long operation.
+  async function buildBackupBlob({ entries, settings, includePhotos = true, onProgress } = {}) {
+    let acc = new Blob([]);
+    let parts = [];
+    const flush = () => {
+      if (!parts.length) return;
+      acc = new Blob([acc, ...parts], { type: 'application/json' });
+      parts = [];
+    };
+
+    parts.push(JSON.stringify({
       format: BACKUP_FORMAT,
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
+      photosIncluded: !!includePhotos,
       settings,
-      entries: [],
-    };
-    for (const e of entries) {
+    }).slice(0, -1)); // drop the closing brace; entries are appended into it
+    parts.push(',"entries":[');
+
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
       const row = {
         date: e.date,
         weightKg: e.weightKg,
@@ -158,8 +185,10 @@
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       };
-      if (e.hasPhoto) {
-        const photo = photosById ? photosById.get(e.id) : await FatterDB.getPhoto(e.id);
+      if (includePhotos && e.hasPhoto) {
+        // Fetched one at a time and released immediately after encoding,
+        // rather than pre-loading every photo in the library up front.
+        const photo = await FatterDB.getPhoto(e.id);
         if (photo) {
           row.photo = {
             data: await blobToDataUrl(photo.blob),
@@ -170,13 +199,22 @@
           };
         }
       }
-      out.entries.push(row);
+      parts.push((i ? ',' : '') + JSON.stringify(row));
+      if (i % FLUSH_EVERY === FLUSH_EVERY - 1) {
+        flush();
+        // Yield so a long export cannot lock the UI thread outright.
+        await new Promise((r) => setTimeout(r, 0));
+        if (onProgress) onProgress(i + 1, entries.length);
+      }
     }
-    return out;
+
+    parts.push(']}');
+    flush();
+    if (onProgress) onProgress(entries.length, entries.length);
+    return acc;
   }
 
-  function downloadJson(obj, filename) {
-    const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  function downloadBackupBlob(blob, filename) {
     downloadBlob(blob, filename);
   }
 
@@ -221,7 +259,7 @@
           date: row.date,
           weightKg: row.weightKg,
           note: row.note || '',
-          hasPhoto: !!row.photo,
+          hasPhoto: row.photo ? 1 : 0,
           createdAt: row.createdAt || Date.parse(obj.exportedAt) || 0,
           updatedAt: row.updatedAt || row.createdAt || 0,
         });
@@ -242,8 +280,8 @@
 
   global.FatterExport = {
     exportExcel,
-    buildBackup,
-    downloadJson,
+    buildBackupBlob,
+    downloadBackupBlob,
     validateBackup,
     restoreBackup,
     estimateBackupSize,

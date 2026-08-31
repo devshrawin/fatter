@@ -2,7 +2,7 @@
 // persisted data. Nothing in this file talks to a network.
 //
 // Schema:
-//   entries:  { id, date('YYYY-MM-DD'), weightKg, note, hasPhoto, createdAt, updatedAt }
+//   entries:  { id, date('YYYY-MM-DD'), weightKg, note, hasPhoto(0|1), createdAt, updatedAt }
 //   photos:   { entryId, blob, thumbBlob, width, height, type, size }
 //   settings: { key, value }
 //
@@ -13,11 +13,34 @@
   'use strict';
 
   const db = new Dexie('fatter-db');
+
   db.version(1).stores({
     entries: '++id, date, createdAt',
     photos: 'entryId',
     settings: 'key',
   });
+
+  // v2 indexes hasPhoto so "which entries have a photo" is an index lookup
+  // rather than a full scan. The Gallery and the Log both answer that
+  // question on every render, and both were loading every entry to do it.
+  //
+  // IndexedDB cannot index a boolean, so hasPhoto is stored as 0/1 from v2
+  // on. Both remain falsy/truthy in the same places, so every existing
+  // `if (entry.hasPhoto)` read still behaves identically; only the writes
+  // had to change. The upgrade backfills existing rows.
+  //
+  // This is also the migration template for this file. Dexie runs every
+  // version block a given install has not seen yet, in order, inside one
+  // transaction, so an install still on v1 gets this upgrade on next open
+  // and an install already on v2 skips it. Never edit a shipped version
+  // block: add a new one.
+  db.version(2).stores({
+    entries: '++id, date, createdAt, hasPhoto',
+    photos: 'entryId',
+    settings: 'key',
+  }).upgrade((tx) => tx.table('entries').toCollection().modify((e) => {
+    e.hasPhoto = e.hasPhoto ? 1 : 0;
+  }));
 
   const KG_PER_LB = 0.45359237;
 
@@ -113,6 +136,29 @@
     return all;
   }
 
+  // Index-backed answer to "which entries have a photo", used by the Gallery
+  // and by the Log's photo filter. Both previously pulled every entry into
+  // memory and filtered in JS.
+  async function getEntriesWithPhotosSorted() {
+    const all = await db.entries.where('hasPhoto').equals(1).toArray();
+    all.sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
+    return all;
+  }
+
+  // Total bytes of stored photo data, counted without materialising the rows.
+  // Summing this by fetching every photo row first is what made the backup
+  // size estimate as expensive as the backup itself.
+  async function getPhotoBytes() {
+    let total = 0;
+    await db.photos.each((p) => {
+      total += (p.blob?.size || 0) + (p.thumbBlob?.size || 0);
+    });
+    return total;
+  }
+
   function isQuotaError(err) {
     return err && (err.name === 'QuotaExceededError' || /quota/i.test(err.message || ''));
   }
@@ -126,7 +172,7 @@
           date,
           weightKg,
           note: note || '',
-          hasPhoto: !!photoPayload,
+          hasPhoto: photoPayload ? 1 : 0,
           createdAt: ts,
           updatedAt: ts,
         });
@@ -146,7 +192,7 @@
       return await db.transaction('rw', db.entries, db.photos, async () => {
         const existing = await db.entries.get(id);
         if (!existing) throw new FatterError('NOT_FOUND', 'Entry no longer exists.');
-        const hasPhoto = photoPayload ? true : (removePhoto ? false : existing.hasPhoto);
+        const hasPhoto = photoPayload ? 1 : (removePhoto ? 0 : (existing.hasPhoto ? 1 : 0));
         await db.entries.update(id, {
           date, weightKg, note: note || '', hasPhoto, updatedAt: now,
         });
@@ -259,6 +305,8 @@
     setSetting,
     getLatestEntry,
     getAllEntriesSorted,
+    getEntriesWithPhotosSorted,
+    getPhotoBytes,
     createEntry,
     updateEntry,
     deleteEntry,

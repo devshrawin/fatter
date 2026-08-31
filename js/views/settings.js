@@ -7,7 +7,7 @@
 
   const { h, fmtWeight, fmtHeight, escapeHtml, preventWheelChange, toast,
     openDialog, openSheet, typedConfirm, simpleConfirm, freshViewPool } = FatterUICore;
-  const { getSettings, setSetting, getAllEntriesSorted, getPhoto, clearAll,
+  const { getSettings, setSetting, getAllEntriesSorted, clearAll,
     toDisplayWeight, fromDisplayWeight, toDisplayHeight, fromDisplayHeight,
     getStorageEstimate, fmtFeetInches, cmToFeetInches, feetInchesToCm } = FatterDB;
 
@@ -104,7 +104,17 @@
             <svg class="icon" style="width:16px;height:16px;color:var(--text-secondary)" viewBox="0 0 24 24"><use href="#icon-download"/></svg>
           </div>
           <div class="settings-row" id="btn-export-backup" style="cursor:pointer">
-            <div class="settings-row__label">Export full backup</div>
+            <div>
+              <div class="settings-row__label">Export full backup</div>
+              <div class="text-tertiary" style="font-size:11px;margin-top:2px">Entries and photos</div>
+            </div>
+            <svg class="icon" style="width:16px;height:16px;color:var(--text-secondary)" viewBox="0 0 24 24"><use href="#icon-download"/></svg>
+          </div>
+          <div class="settings-row" id="btn-export-backup-light" style="cursor:pointer">
+            <div>
+              <div class="settings-row__label">Export data only</div>
+              <div class="text-tertiary" style="font-size:11px;margin-top:2px">Weights and notes, no photos. Much smaller.</div>
+            </div>
             <svg class="icon" style="width:16px;height:16px;color:var(--text-secondary)" viewBox="0 0 24 24"><use href="#icon-download"/></svg>
           </div>
           <div class="settings-row" id="btn-import-backup" style="cursor:pointer">
@@ -302,23 +312,17 @@
       }
     });
 
-    root.querySelector('#btn-export-backup').addEventListener('click', async (e) => {
-      const btn = e.currentTarget;
+    async function runBackup(btn, includePhotos) {
       setRowBusy(btn, true);
       try {
         const entries = await getAllEntriesSorted();
         if (!entries.length) { toast('Nothing to back up yet.', { type: 'error' }); return; }
-        // Fetch every photo once and reuse it for both the size estimate and
-        // the actual backup build. Previously each fetched independently.
-        const withPhoto = entries.filter((en) => en.hasPhoto);
-        const photos = await Promise.all(withPhoto.map((en) => getPhoto(en.id)));
-        const photosById = new Map(withPhoto.map((en, i) => [en.id, photos[i]]));
-        const estBytes = await FatterExport.estimateBackupSize(entries, photosById);
+        const estBytes = await FatterExport.estimateBackupSize(includePhotos);
         if (estBytes > FatterExport.LARGE_BACKUP_WARN_BYTES) {
           const proceed = await new Promise((resolve) => {
             simpleConfirm({
               title: 'Large backup',
-              body: `This backup will be roughly ${(estBytes / (1024 * 1024)).toFixed(0)} MB. Continue?`,
+              body: `This backup will be roughly ${(estBytes / (1024 * 1024)).toFixed(0)} MB and may take a while. "Export data only" skips the photos if you just want your weights.`,
               confirmLabel: 'Continue', destructive: false,
               onConfirm: () => resolve(true),
               onCancel: () => resolve(false), // previously unset, so Cancel never resolved this Promise, leaving the Export row disabled forever
@@ -326,15 +330,31 @@
           });
           if (!proceed) return;
         }
-        const backup = await FatterExport.buildBackup(entries, settings, photosById);
-        FatterExport.downloadJson(backup, `fatter-backup-${FatterExport.todayStamp()}.json`);
+        const label = btn.querySelector('.settings-row__label');
+        const labelText = label.textContent;
+        const blob = await FatterExport.buildBackupBlob({
+          entries,
+          settings,
+          includePhotos,
+          onProgress: (done, total) => {
+            // A photo-heavy export is now a genuinely long operation, so it
+            // reports progress instead of looking hung.
+            if (total > 20) label.textContent = `Exporting ${Math.round((done / total) * 100)}%`;
+          },
+        });
+        label.textContent = labelText;
+        const suffix = includePhotos ? '' : '-data-only';
+        FatterExport.downloadBackupBlob(blob, `fatter-backup${suffix}-${FatterExport.todayStamp()}.json`);
         toast('Backup downloaded.');
       } catch (err) {
         toast('Could not create the backup.', { type: 'error' });
       } finally {
         setRowBusy(btn, false);
       }
-    });
+    }
+
+    root.querySelector('#btn-export-backup').addEventListener('click', (e) => runBackup(e.currentTarget, true));
+    root.querySelector('#btn-export-backup-light').addEventListener('click', (e) => runBackup(e.currentTarget, false));
 
     root.querySelector('#btn-import-backup').addEventListener('click', () => root.querySelector('#import-file-input').click());
     root.querySelector('#btn-add-to-home-screen').addEventListener('click', () => FatterOnboarding.showInstallHelp());
