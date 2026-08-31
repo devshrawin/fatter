@@ -134,6 +134,123 @@
   // context and restarts the entrance animation each time, which visibly
   // flickers on quick successive taps. A genuinely new canvas (a full
   // dashboard re-render after save/edit/delete) still gets a fresh instance.
+  // ---------------- Calendar-aware ticks for the linear (epoch-ms) x axis ----------------
+  //
+  // A linear scale places ticks at even NUMERIC intervals from the data
+  // minimum, which on timestamps lands them on meaningless dates: a 21-month
+  // history produced "Mar 9 / Jul 3 / Oct 27 / Feb 20", four arbitrary days
+  // no reader can anchor to, with no year anywhere despite the range spanning
+  // three of them. These helpers snap ticks to real calendar boundaries
+  // (day / Monday / month-aligned-to-step / January) and label them with the
+  // least text that still disambiguates.
+  //
+  // This is the reason for NOT using Chart.js's own 'time' scale, which does
+  // all of the above: it requires a separate date-adapter library, and the
+  // whole app is dependency-frugal by design.
+
+  const DAY_MS = 86400000;
+
+  function startOfDay(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d; }
+
+  function pickDateStep(spanDays, target) {
+    // Month steps are constrained to divisors of 12 so the ticks land on
+    // recognisable boundaries (quarters, halves) rather than every 5 months.
+    if (spanDays <= 21) return { unit: 'day', step: Math.max(1, Math.ceil(spanDays / target)) };
+    if (spanDays <= 120) return { unit: 'week', step: Math.max(1, Math.ceil(spanDays / 7 / target)) };
+    if (spanDays <= 1100) {
+      const rawStep = Math.max(1, Math.ceil(spanDays / 30.44 / target));
+      const step = [1, 2, 3, 6, 12].find((s) => s >= rawStep) || 12;
+      return { unit: 'month', step };
+    }
+    return { unit: 'year', step: Math.max(1, Math.ceil(spanDays / 365 / target)) };
+  }
+
+  function buildDateTicks(minX, maxX, target) {
+    const spanDays = (maxX - minX) / DAY_MS;
+    const { unit, step } = pickDateStep(spanDays, target);
+    const ticks = [];
+    const d = startOfDay(minX);
+
+    if (unit === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // back to Monday
+    if (unit === 'month' || unit === 'year') d.setDate(1);
+    if (unit === 'month') {
+      // Align to January so a step of 3 gives Jan/Apr/Jul/Oct, not Feb/May/...
+      d.setMonth(Math.floor(d.getMonth() / step) * step);
+    }
+    if (unit === 'year') d.setMonth(0);
+
+    const advance = () => {
+      if (unit === 'day') d.setDate(d.getDate() + step);
+      else if (unit === 'week') d.setDate(d.getDate() + step * 7);
+      else if (unit === 'month') d.setMonth(d.getMonth() + step);
+      else d.setFullYear(d.getFullYear() + step);
+    };
+
+    // Guard the loop independently of the date maths so a bad step can never
+    // hang the render.
+    let guard = 0;
+    while (d.getTime() <= maxX && guard++ < 500) {
+      if (d.getTime() >= minX) ticks.push(d.getTime());
+      advance();
+    }
+    return { ticks, unit };
+  }
+
+  // Labels carry the year only where it actually changes meaning: on the
+  // first tick, and on any tick that opens a new year. Repeating "2025" on
+  // every label is noise on a phone-width axis.
+  function makeTickFormatter(unit, ticks) {
+    const years = new Set(ticks.map((t) => new Date(t).getFullYear()));
+    const multiYear = years.size > 1;
+    return (value, index) => {
+      const d = new Date(value);
+      const yr = `'${String(d.getFullYear()).slice(2)}`;
+      if (unit === 'year') return String(d.getFullYear());
+      if (unit === 'month') {
+        const m = d.toLocaleDateString(undefined, { month: 'short' });
+        const opensYear = index === 0 || d.getMonth() === 0;
+        return multiYear && opensYear ? `${m} ${yr}` : m;
+      }
+      const md = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return multiYear && index === 0 ? `${md} ${yr}` : md;
+    };
+  }
+
+  // Trailing average over a real time window (not a fixed number of points),
+  // so a week with four weigh-ins and a week with one are weighted by date
+  // rather than by how often the user happened to step on the scale.
+  function trailingAverage(pts, windowDays) {
+    const win = windowDays * DAY_MS;
+    let head = 0, sum = 0;
+    return pts.map((p, i) => {
+      sum += p.y;
+      while (pts[head].x < p.x - win) { sum -= pts[head].y; head++; }
+      return { x: p.x, y: Math.round((sum / (i - head + 1)) * 10) / 10 };
+    });
+  }
+
+  // Inserts a null wherever consecutive points are more than gapMs apart, so
+  // the line breaks instead of drawing straight through a period with no
+  // measurements at all (which reads as steady progress that was never
+  // recorded).
+  function breakGaps(pts, gapMs) {
+    const out = [];
+    pts.forEach((p, i) => {
+      if (i && p.x - pts[i - 1].x > gapMs) out.push({ x: pts[i - 1].x + 1, y: null });
+      out.push(p);
+    });
+    return out;
+  }
+
+  // opts.metric: 'weight' (default) | 'bmi'. opts.heightCm required for 'bmi'.
+  //
+  // Updates the existing Chart instance in place (chart.update('none')) when
+  // re-rendering onto the SAME canvas (e.g. the Weight/BMI and date-range
+  // toggles both call this repeatedly on one long-lived canvas). destroy()+
+  // new Chart() on every toggle tap tears down and rebuilds the canvas
+  // context and restarts the entrance animation each time, which visibly
+  // flickers on quick successive taps. A genuinely new canvas (a full
+  // dashboard re-render after save/edit/delete) still gets a fresh instance.
   function renderChart(canvas, entries, unit, opts = {}) {
     const { toDisplayWeight } = FatterDB;
     const metric = opts.metric === 'bmi' ? 'bmi' : 'weight';
@@ -162,38 +279,45 @@
         : Math.round(toDisplayWeight(e.weightKg, unit) * 10) / 10,
     }));
 
-    // Break the line across long gaps instead of drawing straight through
-    // them. Joining two entries months apart draws a smooth descent over a
-    // period with no measurements at all, which reads as steady progress that
-    // was never recorded. A null between them leaves the gap visibly empty,
-    // which is the truth. Threshold is deliberately generous so ordinary
-    // week-to-week logging stays connected.
-    const GAP_MS = (opts.gapDays || 21) * 86400000;
-    const points = [];
-    raw.forEach((p, i) => {
-      if (i && p.x - raw[i - 1].x > GAP_MS) points.push({ x: raw[i - 1].x + 1, y: null });
-      points.push(p);
-    });
-
-    // A linear scale has no natural tick range from a single x value (or a
-    // single repeated date). Chart.js falls back to an arbitrary auto-range
-    // and produces nonsense date labels. Pin a small explicit window around
-    // the lone point(s) instead.
     const xs = raw.map((p) => p.x);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const DAY = 86400000;
-    const xRange = minX === maxX ? { min: minX - 3 * DAY, max: maxX + 3 * DAY } : { min: undefined, max: undefined };
+    const spanDays = (maxX - minX) / DAY_MS;
 
-    const ctx = canvas.getContext('2d');
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight || 220);
-    gradient.addColorStop(0, hexToRgba(accent, 0.28));
-    gradient.addColorStop(1, hexToRgba(accent, 0.02));
+    // A linear scale has no natural tick range from a single x value (or a
+    // single repeated date). Pin a small explicit window around the lone
+    // point(s) rather than letting it auto-range to nonsense.
+    const single = minX === maxX;
+    const xMin = single ? minX - 3 * DAY_MS : minX;
+    const xMax = single ? maxX + 3 * DAY_MS : maxX;
 
-    const tooltipLabel = (item) => metric === 'bmi' ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}` : `${item.parsed.y} ${unit}`;
+    // Over a long history, connecting 70-odd weigh-ins directly draws every
+    // day-to-day fluctuation (water weight, time of day, what you ate) at the
+    // same visual weight as the actual trend, and dense clusters collapse
+    // into blobs. Past a quarter of history, the smoothed trend becomes the
+    // line and the real measurements become a lighter scatter behind it, so
+    // both the direction and the individual readings stay legible. Short
+    // ranges keep the plain connected line: a 7-day average over a 7-day
+    // window is a flat line that says nothing.
+    const useTrend = spanDays > 75 && raw.length >= 12;
+    const trendWindow = spanDays > 400 ? 21 : 10;
 
-    // Points stay visible however long the history gets. Hiding them past an
-    // arbitrary count removes the only cue that these are discrete weigh-ins
-    // rather than a continuous measurement, so shrink them instead.
+    const GAP_MS = (opts.gapDays || 21) * DAY_MS;
+    const lineSource = useTrend ? trailingAverage(raw, trendWindow) : raw;
+    const linePoints = breakGaps(lineSource, GAP_MS);
+    const scatterPoints = useTrend ? raw : [];
+
+    // The area fill is dropped whenever the series has real gaps in it. Fill
+    // drops to the axis floor at every break, so a history with a few months
+    // off turns into a row of solid columns that look like a bar chart nobody
+    // asked for. Continuous ranges (which is what 7d/30d almost always are)
+    // still get the gradient.
+    const hasGaps = linePoints.some((p) => p.y === null);
+    const gradient = ctxGradient(canvas, accent);
+
+    const tooltipLabel = (item) => metric === 'bmi'
+      ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}`
+      : `${item.parsed.y} ${unit}`;
+
     const dotSize = raw.length > 120 ? 1.5 : raw.length > 40 ? 2 : 3;
 
     // A goal line is worth far more on the chart than in a stat card: it turns
@@ -201,23 +325,66 @@
     // pulling in the annotation plugin for one dashed line.
     const goalY = (metric === 'weight' && opts.goalKg != null)
       ? Math.round(toDisplayWeight(opts.goalKg, unit) * 10) / 10 : null;
-    const goalData = goalY == null ? [] : [{ x: minX, y: goalY }, { x: maxX, y: goalY }];
+    const goalData = goalY == null ? [] : [{ x: xMin, y: goalY }, { x: xMax, y: goalY }];
     const goalColor = readCssColor('--text-tertiary') || '#7d7a6d';
 
+    const { ticks: tickValues, unit: tickUnit } = buildDateTicks(xMin, xMax, canvas.clientWidth < 420 ? 5 : 8);
+    const tickFormat = makeTickFormatter(tickUnit, tickValues);
+
+    const datasets = [
+      { // 0: trend (or the plain series on short ranges)
+        data: linePoints,
+        borderColor: accent,
+        backgroundColor: gradient,
+        fill: hasGaps ? false : 'origin',
+        tension: 0.35,
+        pointRadius: useTrend ? 0 : dotSize,
+        pointHoverRadius: useTrend ? 0 : 5,
+        pointBackgroundColor: accent,
+        pointBorderColor: accent,
+        borderWidth: useTrend ? 2.5 : 2,
+        spanGaps: false,
+      },
+      { // 1: raw weigh-ins behind the trend
+        data: scatterPoints,
+        showLine: false,
+        pointRadius: Math.min(dotSize, 2),
+        pointHoverRadius: 5,
+        pointBackgroundColor: hexToRgba(accent, 0.32),
+        pointBorderColor: 'transparent',
+        pointBorderWidth: 0,
+      },
+      { // 2: goal line
+        data: goalData,
+        borderColor: goalColor,
+        borderDash: [6, 5],
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        fill: false,
+        tension: 0,
+      },
+    ];
+
+    // The trend line is a derived value, so pointing at it and reading off a
+    // weight the user never recorded would be a lie. Only the raw series (or
+    // the plain line, which IS the raw series) answers the tooltip.
+    const tooltipCallbacks = {
+      title: (items) => new Date(items[0].parsed.x).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+      label: (item) => {
+        if (item.datasetIndex === 2) return null;
+        if (useTrend && item.datasetIndex === 0) return null;
+        return tooltipLabel(item);
+      },
+    };
+
     if (chartInstance) {
-      const ds = chartInstance.data.datasets[0];
-      ds.data = points;
-      ds.borderColor = accent;
-      ds.backgroundColor = gradient;
-      ds.pointRadius = dotSize;
-      ds.pointBackgroundColor = accent;
-      ds.pointBorderColor = accent;
-      const gd = chartInstance.data.datasets[1];
-      gd.data = goalData;
-      gd.borderColor = goalColor;
-      chartInstance.options.scales.x.min = xRange.min;
-      chartInstance.options.scales.x.max = xRange.max;
-      chartInstance.options.plugins.tooltip.callbacks.label = (item) => item.datasetIndex === 1 ? null : tooltipLabel(item);
+      datasets.forEach((d, i) => Object.assign(chartInstance.data.datasets[i], d));
+      const x = chartInstance.options.scales.x;
+      x.min = xMin; x.max = xMax;
+      x.afterBuildTicks = (axis) => { axis.ticks = tickValues.map((v) => ({ value: v })); };
+      x.ticks.callback = (value, index) => tickFormat(value, index);
+      chartInstance.options.plugins.tooltip.callbacks = tooltipCallbacks;
       // Re-measure before drawing. The canvas is frequently laid out after
       // the chart is constructed (a route render, a rotation, an install
       // opening at a different size), and without this the whole series is
@@ -228,33 +395,9 @@
       return chartInstance;
     }
 
-    chartInstance = new Chart(ctx, {
+    chartInstance = new Chart(canvas.getContext('2d'), {
       type: 'line',
-      data: {
-        datasets: [{
-          data: points,
-          borderColor: accent,
-          backgroundColor: gradient,
-          fill: true,
-          tension: 0.3,
-          pointRadius: dotSize,
-          pointHoverRadius: 5,
-          pointBackgroundColor: accent,
-          pointBorderColor: accent,
-          borderWidth: 2,
-          spanGaps: false,   // honour the nulls inserted for long gaps
-        }, {
-          // goal line
-          data: goalData,
-          borderColor: goalColor,
-          borderDash: [5, 4],
-          borderWidth: 1.5,
-          pointRadius: 0,
-          pointHoverRadius: 0,
-          fill: false,
-          tension: 0,
-        }],
-      },
+      data: { datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -263,33 +406,56 @@
         scales: {
           x: {
             type: 'linear',
+            min: xMin,
+            max: xMax,
             grid: { display: false },
-            ...xRange,
+            border: { color: border },
+            // Explicit calendar ticks; autoSkip is off because these are
+            // already the exact set we want and skipping would reintroduce
+            // uneven spacing.
+            afterBuildTicks: (axis) => { axis.ticks = tickValues.map((v) => ({ value: v })); },
             ticks: {
               color: textSecondary,
               maxRotation: 0,
-              autoSkip: true,
-              callback: (value) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+              autoSkip: false,
+              includeBounds: false,
+              padding: 6,
+              callback: (value, index) => tickFormat(value, index),
             },
           },
           y: {
-            grid: { color: border },
-            ticks: { color: textSecondary },
+            // Gridlines are deliberately SOLID. They were briefly dashed,
+            // which made them visually identical to the dashed goal line:
+            // the one reference line that carries meaning disappeared into
+            // four that carry none. Dashed now means "goal" and nothing else.
+            grid: { color: border, drawTicks: false, lineWidth: 1 },
+            border: { display: false },
+            // A little headroom so the line and the goal marker do not touch
+            // the top and bottom edges. Kept small: at 8% the rounding to
+            // nice tick values pushed a 95-147 kg history out to an 80-160
+            // axis, spending a third of the plot height on empty space and
+            // flattening the very trend the chart exists to show.
+            grace: '3%',
+            ticks: { color: textSecondary, padding: 8, maxTicksLimit: 7 },
           },
         },
         plugins: {
           legend: { display: false },
-          tooltip: {
-            callbacks: {
-              title: (items) => new Date(items[0].parsed.x).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
-              // the flat goal series has no per-point meaning in the tooltip
-              label: (item) => item.datasetIndex === 1 ? null : tooltipLabel(item),
-            },
-          },
+          tooltip: { callbacks: tooltipCallbacks },
         },
       },
     });
     return chartInstance;
+  }
+
+  // Vertical gradient for the area fill, rebuilt per render because it is
+  // bound to the canvas height at creation time.
+  function ctxGradient(canvas, accent) {
+    const ctx = canvas.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight || 220);
+    g.addColorStop(0, hexToRgba(accent, 0.28));
+    g.addColorStop(1, hexToRgba(accent, 0.02));
+    return g;
   }
 
   // Normalizes ANY valid CSS color (hex, oklch(), named, ...) to rgba() at the
