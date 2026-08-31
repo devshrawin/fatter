@@ -300,6 +300,35 @@
     };
   }
 
+  // Weekly rate of change at each weigh-in, measured against the earliest
+  // reading still inside a trailing window. Answers "am I still moving", which
+  // the absolute line answers badly once the numbers get close together.
+  //
+  // Points with no partner far enough back are null rather than 0, and the
+  // minimum span is a full week. This is not conservatism for its own sake:
+  // dividing by a short span multiplies whatever noise is in the two
+  // readings. On real data, two weigh-ins three days apart differing by 8 kg
+  // produced -19 kg/week, and a handful of those outliers stretched the axis
+  // to -30..+20 and flattened the entire meaningful -2..+2 range into a smear
+  // along zero. A week minimum keeps the rate line readable and drops only
+  // the stretches too sparsely logged to support the number.
+  const RATE_WINDOW_DAYS = 14;
+  const RATE_MIN_DAYS = 7;
+
+  function weeklyRate(pts, windowDays) {
+    const win = windowDays * DAY_MS;
+    const out = [];
+    let head = 0;
+    for (let i = 0; i < pts.length; i++) {
+      while (pts[head].x < pts[i].x - win) head++;
+      const days = (pts[i].x - pts[head].x) / DAY_MS;
+      if (head === i || days < RATE_MIN_DAYS) { out.push({ x: pts[i].x, y: null }); continue; }
+      const weeks = days / 7;
+      out.push({ x: pts[i].x, y: Math.round(((pts[i].y - pts[head].y) / weeks) * 100) / 100 });
+    }
+    return out;
+  }
+
   // Inserts a null wherever consecutive points are more than gapMs apart, so
   // the line breaks instead of drawing straight through a period with no
   // measurements at all (which reads as steady progress that was never
@@ -324,7 +353,7 @@
   // dashboard re-render after save/edit/delete) still gets a fresh instance.
   function renderChart(canvas, entries, unit, opts = {}) {
     const { toDisplayWeight } = FatterDB;
-    const metric = opts.metric === 'bmi' ? 'bmi' : 'weight';
+    const metric = opts.metric === 'bmi' ? 'bmi' : opts.metric === 'rate' ? 'rate' : 'weight';
 
     if (chartInstance && chartInstance.canvas !== canvas) {
       chartInstance.destroy();
@@ -349,6 +378,9 @@
         ? Math.round(computeBMI(e.weightKg, opts.heightCm) * 10) / 10
         : Math.round(toDisplayWeight(e.weightKg, unit) * 10) / 10,
     }));
+    // Rate is derived from the display-unit weights above, so it is already
+    // in the user's unit per week.
+    const series = metric === 'rate' ? weeklyRate(raw, RATE_WINDOW_DAYS) : raw;
 
     const xs = raw.map((p) => p.x);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -367,19 +399,23 @@
     // where the user expects the weight they actually recorded. The line is
     // the measurements, nothing else.
     const GAP_MS = (opts.gapDays || 21) * DAY_MS;
-    const linePoints = breakGaps(raw, GAP_MS);
+    const linePoints = breakGaps(series, GAP_MS);
 
     // The area fill is dropped whenever the series has real gaps in it. Fill
     // drops to the axis floor at every break, so a history with a few months
     // off turns into a row of solid columns that look like a bar chart nobody
     // asked for. Continuous ranges (which is what 7d/30d almost always are)
     // still get the gradient.
-    const hasGaps = linePoints.some((p) => p.y === null);
+    // A rate line crosses zero, so filling to the axis floor would shade a
+    // meaningless area. Only the absolute metrics get a fill.
+    const hasGaps = metric === 'rate' || linePoints.some((p) => p.y === null);
     const gradient = ctxGradient(canvas, accent);
 
-    const tooltipLabel = (item) => metric === 'bmi'
-      ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}`
-      : `${item.parsed.y} ${unit}`;
+    const tooltipLabel = (item) => {
+      if (metric === 'bmi') return `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}`;
+      if (metric === 'rate') return `${item.parsed.y > 0 ? '+' : ''}${item.parsed.y} ${unit}/week`;
+      return `${item.parsed.y} ${unit}`;
+    };
 
     const dotSize = raw.length > 120 ? 1.5 : raw.length > 40 ? 2 : 3;
 
@@ -388,7 +424,11 @@
     // pulling in the annotation plugin for one dashed line.
     const goalY = (metric === 'weight' && opts.goalKg != null)
       ? Math.round(toDisplayWeight(opts.goalKg, unit) * 10) / 10 : null;
-    const goalData = goalY == null ? [] : [{ x: xMin, y: goalY }, { x: xMax, y: goalY }];
+    // In rate mode the meaningful reference is zero: above the line is gaining,
+    // below it is losing. It reuses the same dashed dataset, but carries no
+    // chip, since "0 kg goal" would be nonsense.
+    const refY = metric === 'rate' ? 0 : goalY;
+    const goalData = refY == null ? [] : [{ x: xMin, y: refY }, { x: xMax, y: refY }];
     const goalColor = readCssColor('--text-tertiary') || '#7d7a6d';
 
     const { ticks: tickValues, unit: tickUnit } = buildDateTicks(xMin, xMax, canvas.clientWidth < 420 ? 5 : 8);

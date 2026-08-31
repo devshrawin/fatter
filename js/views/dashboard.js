@@ -120,10 +120,11 @@
             <button class="segmented__item ${dashboardChartRange === '90' ? 'is-active' : ''}" data-val="90" type="button">90d</button>
             <button class="segmented__item ${dashboardChartRange === 'all' ? 'is-active' : ''}" data-val="all" type="button">All</button>
           </div>
-          ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto">
+          <div class="segmented" id="chart-metric-toggle" style="width:auto">
             <button class="segmented__item ${dashboardChartMetric === 'weight' ? 'is-active' : ''}" data-val="weight" type="button">Weight</button>
-            <button class="segmented__item ${dashboardChartMetric === 'bmi' ? 'is-active' : ''}" data-val="bmi" type="button">BMI</button>
-          </div>` : '<div></div>'}
+            ${settings.heightCm ? `<button class="segmented__item ${dashboardChartMetric === 'bmi' ? 'is-active' : ''}" data-val="bmi" type="button">BMI</button>` : ''}
+            <button class="segmented__item ${dashboardChartMetric === 'rate' ? 'is-active' : ''}" data-val="rate" type="button">Rate</button>
+          </div>
         </div>
         <div class="chart-wrap" id="chart-wrap">
           <canvas id="progress-chart" aria-label="Weight progression chart"></canvas>
@@ -152,9 +153,12 @@
       // overall. Without this, the chart area just goes blank with no
       // explanation of why.
       chartEmpty.style.display = scoped.length ? 'none' : 'flex';
-      FatterChart.renderChart(canvas, scoped, unit, dashboardChartMetric === 'bmi'
+      const chartOpts = dashboardChartMetric === 'bmi'
         ? { metric: 'bmi', heightCm: settings.heightCm }
-        : { goalKg: settings.goalWeightKg });
+        : dashboardChartMetric === 'rate'
+          ? { metric: 'rate' }
+          : { goalKg: settings.goalWeightKg };
+      FatterChart.renderChart(canvas, scoped, unit, chartOpts);
     }
     rerenderChart();
 

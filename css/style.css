@@ -407,6 +407,71 @@ img { max-width: 100%; display: block; }
   color: oklch(95% 0 0); font-size: 9px; font-weight: 600;
 }
 
+/* ---- gallery selection (compare mode) ---- */
+.gallery-tile__check {
+  position: absolute; top: 5px; right: 5px;
+  width: 20px; height: 20px; border-radius: 999px;
+  display: none; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--accent-contrast);
+}
+.gallery-tile__check .icon { width: 13px; height: 13px; }
+/* Only while selecting, so the ring and the checkbox affordance never appear
+   during ordinary browsing. */
+.gallery-grid--selecting .gallery-tile { outline: 2px solid transparent; outline-offset: -2px; }
+.gallery-tile.is-selected { outline-color: var(--accent); }
+.gallery-tile.is-selected img { opacity: 0.72; }
+.gallery-tile.is-selected .gallery-tile__check { display: flex; }
+
+/* ============ Log controls (search + filter) ============ */
+.log-controls {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.log-controls--gallery { justify-content: space-between; }
+.log-search {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  min-height: 40px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+}
+.log-search .icon { width: 16px; height: 16px; color: var(--text-tertiary); flex: none; }
+.log-search input {
+  flex: 1; min-width: 0;
+  border: none; background: none; outline: none;
+  color: var(--text-primary); font-size: var(--fs-body); font-family: inherit;
+  /* 16px keeps iOS from zooming the page on focus, which the app otherwise
+     forbids entirely. */
+}
+.log-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.log-controls .segmented { width: auto; flex: none; }
+
+.show-more {
+  display: block; width: 100%;
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+.show-more[hidden] { display: none; }
+
+/* ============ Compare ============ */
+.compare-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.compare-side { margin: 0; }
+.compare-side img {
+  width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover;
+  border-radius: var(--r-control);
+  background: var(--surface-sunken);
+}
+.compare-side figcaption { margin-top: var(--sp-2); text-align: center; }
+.compare-side__date { font-size: var(--fs-caption); color: var(--text-secondary); }
+.compare-side__weight { font-size: var(--fs-label); font-weight: 700; color: var(--text-primary); }
+.compare-summary {
+  margin-top: var(--sp-4); padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font-size: var(--fs-label); color: var(--text-secondary);
+}
+
 /* ============ Modal / bottom sheet ============ */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 40;
