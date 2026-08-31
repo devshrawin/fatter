@@ -1,5 +1,5 @@
 // dashboard.js implements the Dashboard route: stat cards, goal/BMI/streak,
-// the progress chart, and the "recent" photo strip. Depends on ui-core.js and
+// and the progress chart. Depends on ui-core.js and
 // on FatterUI.openEntryDetail / FatterUI.startAddEntryFlow, both defined in
 // entry-form.js, so load order in index.html must reflect that.
 
@@ -7,7 +7,7 @@
   'use strict';
 
   const { h, fmtWeight, fmtEta, round1, escapeHtml, deltaSpan, freshViewPool } = FatterUICore;
-  const { getSettings, getAllEntriesSorted, getPhoto } = FatterDB;
+  const { getSettings, getAllEntriesSorted } = FatterDB;
 
   // Persisted across renders (module scope, not per-call) so saving/editing/
   // deleting an entry, which re-renders the whole dashboard via the
@@ -19,7 +19,7 @@
   let nudgeState = null;
 
   async function renderDashboard(root) {
-    const pool = freshViewPool();
+    freshViewPool();
     const [settings, entries] = await Promise.all([getSettings(), getAllEntriesSorted()]);
     const unit = settings.unit;
 
@@ -114,23 +114,23 @@
       </div>
       <div class="card">
         <div class="row row--between" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
-          ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto">
-            <button class="segmented__item ${dashboardChartMetric === 'weight' ? 'is-active' : ''}" data-val="weight" type="button">Weight</button>
-            <button class="segmented__item ${dashboardChartMetric === 'bmi' ? 'is-active' : ''}" data-val="bmi" type="button">BMI</button>
-          </div>` : '<div></div>'}
           <div class="segmented" id="chart-range-toggle" style="width:auto">
             <button class="segmented__item ${dashboardChartRange === '7' ? 'is-active' : ''}" data-val="7" type="button">7d</button>
             <button class="segmented__item ${dashboardChartRange === '30' ? 'is-active' : ''}" data-val="30" type="button">30d</button>
             <button class="segmented__item ${dashboardChartRange === '90' ? 'is-active' : ''}" data-val="90" type="button">90d</button>
             <button class="segmented__item ${dashboardChartRange === 'all' ? 'is-active' : ''}" data-val="all" type="button">All</button>
           </div>
+          ${settings.heightCm ? `<div class="segmented" id="chart-metric-toggle" style="width:auto">
+            <button class="segmented__item ${dashboardChartMetric === 'weight' ? 'is-active' : ''}" data-val="weight" type="button">Weight</button>
+            <button class="segmented__item ${dashboardChartMetric === 'bmi' ? 'is-active' : ''}" data-val="bmi" type="button">BMI</button>
+          </div>` : '<div></div>'}
         </div>
         <div class="chart-wrap" id="chart-wrap">
           <canvas id="progress-chart" aria-label="Weight progression chart"></canvas>
           <div id="chart-empty" class="text-tertiary" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:0 24px">No entries in this range.</div>
         </div>
       </div>
-      <div id="recent-strip" style="margin-top:16px"></div>`;
+      `;
 
     if (nudgeMessage) {
       // Only on the first decision. See the comment above nudgeState. On a
@@ -152,7 +152,9 @@
       // overall. Without this, the chart area just goes blank with no
       // explanation of why.
       chartEmpty.style.display = scoped.length ? 'none' : 'flex';
-      FatterChart.renderChart(canvas, scoped, unit, dashboardChartMetric === 'bmi' ? { metric: 'bmi', heightCm: settings.heightCm } : {});
+      FatterChart.renderChart(canvas, scoped, unit, dashboardChartMetric === 'bmi'
+        ? { metric: 'bmi', heightCm: settings.heightCm }
+        : { goalKg: settings.goalWeightKg });
     }
     rerenderChart();
 
@@ -172,34 +174,8 @@
       rerenderChart();
     });
 
-    const recent = entries.slice(-4).reverse();
-    const stripEl = root.querySelector('#recent-strip');
-    if (recent.length) {
-      stripEl.innerHTML = `<div class="timeline-month">Recent</div><div class="gallery-grid" style="grid-template-columns:repeat(4,1fr)"></div>`;
-      const grid = stripEl.querySelector('.gallery-grid');
-      // Promise.all instead of a sequential loop: each photoTile() awaits its
-      // own getPhoto(), and there's no ordering dependency between tiles.
-      // Promise.all preserves array order regardless of resolution order.
-      const tiles = await Promise.all(recent.map((entry) => photoTile(entry, pool)));
-      tiles.forEach((tile) => grid.appendChild(tile));
-    }
   }
 
-  async function photoTile(entry, pool) {
-    const tile = h(`<div class="gallery-tile"></div>`);
-    if (entry.hasPhoto) {
-      const photo = await getPhoto(entry.id);
-      if (photo) {
-        const url = pool.get('thumb-' + entry.id, photo.thumbBlob);
-        tile.innerHTML = `<img src="${url}" alt="Progress photo, ${FatterUICore.fmtDate(entry.date)}" loading="lazy">
-          <div class="gallery-tile__overlay">${FatterUICore.fmtDate(entry.date)}</div>`;
-      }
-    } else {
-      tile.innerHTML = `<div class="row" style="height:100%;justify-content:center;color:var(--text-tertiary)"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-image"/></svg></div>`;
-    }
-    tile.addEventListener('click', () => FatterUI.openEntryDetail(entry.id));
-    return tile;
-  }
 
   // Called by settings.js after Clear All Data / Replace-backup, both of
   // which wipe and (for replace) repopulate every entry. A nudge decision

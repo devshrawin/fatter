@@ -2,7 +2,8 @@
    Fatter design tokens + components
    Values below are the literal handoff from the Claude Design pass
    (Fatter.dc.html, section 13, Handoff note). True-neutral grays
-   (0 chroma) so dark/light read as one app; single accent hue (155)
+   (0 chroma) so dark/light read as one app; single accent hue (55, a neon
+   orange)
    used identically for both delta directions (see the ".delta" rule).
    ============================================================ */
 
@@ -15,11 +16,11 @@
   --text-primary: oklch(96% 0 0);
   --text-secondary: oklch(75% 0 0);
   --text-tertiary: oklch(55% 0 0);
-  --accent: oklch(72% 0.14 155);
-  --accent-hover: oklch(76% 0.14 155);
-  --accent-active: oklch(66% 0.14 155);
-  --accent-muted: oklch(30% 0.05 155);
-  --accent-contrast: oklch(15% 0.02 155);
+  --accent: oklch(76% 0.19 55);
+  --accent-hover: oklch(81% 0.19 55);
+  --accent-active: oklch(70% 0.19 55);
+  --accent-muted: oklch(32% 0.07 55);
+  --accent-contrast: oklch(18% 0.03 55);
   --danger: oklch(62% 0.19 25);
   --overlay: oklch(9% 0 0 / 0.55);
   --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
@@ -43,8 +44,8 @@
   --dur-fast: 120ms; --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---- elevation: dark = border + faint accent glow, no drop shadow ---- */
-  --elev-1: 0 0 0 1px oklch(72% 0.14 155 / 0.08);
-  --elev-2: 0 0 0 1px oklch(72% 0.14 155 / 0.12), 0 6px 20px oklch(0% 0 0 / 0.4);
+  --elev-1: 0 0 0 1px oklch(76% 0.19 55 / 0.08);
+  --elev-2: 0 0 0 1px oklch(76% 0.19 55 / 0.12), 0 6px 20px oklch(0% 0 0 / 0.4);
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -58,11 +59,11 @@
   --text-primary: oklch(20% 0 0);
   --text-secondary: oklch(42% 0 0);
   --text-tertiary: oklch(60% 0 0);
-  --accent: oklch(52% 0.14 155);
-  --accent-hover: oklch(48% 0.14 155);
-  --accent-active: oklch(44% 0.14 155);
-  --accent-muted: oklch(90% 0.05 155);
-  --accent-contrast: oklch(99% 0.01 155);
+  --accent: oklch(58% 0.18 48);
+  --accent-hover: oklch(54% 0.18 48);
+  --accent-active: oklch(50% 0.18 48);
+  --accent-muted: oklch(93% 0.06 55);
+  --accent-contrast: oklch(99% 0.01 55);
   --danger: oklch(50% 0.19 25);
   --overlay: oklch(20% 0 0 / 0.45);
   --elev-1: 0 1px 3px oklch(0% 0 0 / 0.06);
@@ -78,11 +79,11 @@
     --text-primary: oklch(20% 0 0);
     --text-secondary: oklch(42% 0 0);
     --text-tertiary: oklch(60% 0 0);
-    --accent: oklch(52% 0.14 155);
-    --accent-hover: oklch(48% 0.14 155);
-    --accent-active: oklch(44% 0.14 155);
-    --accent-muted: oklch(90% 0.05 155);
-    --accent-contrast: oklch(99% 0.01 155);
+    --accent: oklch(58% 0.18 48);
+    --accent-hover: oklch(54% 0.18 48);
+    --accent-active: oklch(50% 0.18 48);
+    --accent-muted: oklch(93% 0.06 55);
+    --accent-contrast: oklch(99% 0.01 55);
     --danger: oklch(50% 0.19 25);
     --overlay: oklch(20% 0 0 / 0.45);
     --elev-1: 0 1px 3px oklch(0% 0 0 / 0.06);
@@ -99,6 +100,15 @@
    UA stylesheet's [hidden]{display:none} (same specificity, author wins). */
 [hidden] { display: none !important; }
 * { box-sizing: border-box; }
+
+/* Pinch and double-tap zoom are turned off app-wide. This is a fixed-layout
+   app with a bottom tab bar and full-screen sheets, and an accidental pinch
+   while dragging the scale-reader crop box leaves the whole UI zoomed with no
+   obvious way back. touch-action does the work in Chrome/Android; the
+   viewport meta and the gesture handlers in js/app.js cover WebKit, which
+   ignores user-scalable on its own. Text still scales with the OS font size
+   setting, so this does not block that accessibility path. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { margin: 0; padding: 0; }
 body {
   background: var(--surface);
@@ -164,6 +174,48 @@ img { max-width: 100%; display: block; }
   width: 100%;
   margin: 0 auto;
 }
+
+/* Dashboard is meant to be a glance, not a scroll: the stat grid and the
+   chart are sized to fit one screen. .view-root--fit turns off the page
+   scroll and lets the chart card absorb whatever height is left over, so the
+   layout adapts to the phone rather than assuming a height. Other routes
+   (Log, Gallery, Settings) are lists and still scroll normally. */
+.view-root--fit {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  /* clears the tab bar AND the FAB, which otherwise sits on top of the
+     newest points and the last axis label now that the chart reaches the
+     bottom of the screen */
+  padding-bottom: calc(var(--sp-2) + var(--safe-bottom) + 128px);
+}
+.view-root--fit .stat-grid { flex: none; margin-bottom: 0; gap: var(--sp-2); }
+
+/* Compact the cards so the whole glance fits a phone screen. The hero keeps
+   its prominence, everything else shrinks to three tight columns; without
+   this the grid alone eats the viewport and the chart gets clipped. */
+.view-root--fit .card { padding: var(--sp-2) var(--sp-3); }
+.view-root--fit .stat-card--hero { grid-column: span 3; }
+.view-root--fit .stat-grid { grid-template-columns: repeat(3, 1fr); }
+.view-root--fit .stat-card--hero .stat-card__value { font-size: 28px; }
+.view-root--fit .stat-card__value { font-size: 16px; margin-top: 2px; }
+.view-root--fit .stat-card__label { font-size: 11px; }
+.view-root--fit .stat-card__unit { font-size: 11px; }
+.view-root--fit .delta { font-size: 13px; }
+.view-root--fit .privacy-banner { padding: var(--sp-2) var(--sp-3); font-size: 12px; }
+
+/* The two toggles wrap onto separate rows at phone width and cost ~50px of
+   height the chart needs. Shrink them so they sit on one line. */
+.view-root--fit .segmented__item { padding: 5px 9px; font-size: 12px; min-height: 30px; }
+.view-root--fit .card:has(.chart-wrap) > .row { margin-bottom: var(--sp-2) !important; gap: var(--sp-2) !important; flex-wrap: nowrap !important; }
+.view-root--fit .card:has(.chart-wrap) {
+  flex: 1 1 auto;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+.view-root--fit .chart-wrap { flex: 1 1 auto; height: auto; min-height: 0; margin-bottom: 0; }
 
 /* ============ Tab bar ============ */
 .tab-bar {

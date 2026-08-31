@@ -151,22 +151,35 @@
       return null;
     }
 
-    const accent = readCssColor('--accent') || '#7ce88c';
-    const textSecondary = readCssColor('--text-secondary') || '#a8b39a';
-    const border = readCssColor('--border') || '#2a3020';
+    const accent = readCssColor('--accent') || '#ff8900';
+    const textSecondary = readCssColor('--text-secondary') || '#a8a596';
+    const border = readCssColor('--border') || '#2e3126';
 
-    const points = entries.map((e) => ({
+    const raw = entries.map((e) => ({
       x: new Date(e.date + 'T00:00:00').getTime(),
       y: metric === 'bmi'
         ? Math.round(computeBMI(e.weightKg, opts.heightCm) * 10) / 10
         : Math.round(toDisplayWeight(e.weightKg, unit) * 10) / 10,
     }));
 
+    // Break the line across long gaps instead of drawing straight through
+    // them. Joining two entries months apart draws a smooth descent over a
+    // period with no measurements at all, which reads as steady progress that
+    // was never recorded. A null between them leaves the gap visibly empty,
+    // which is the truth. Threshold is deliberately generous so ordinary
+    // week-to-week logging stays connected.
+    const GAP_MS = (opts.gapDays || 21) * 86400000;
+    const points = [];
+    raw.forEach((p, i) => {
+      if (i && p.x - raw[i - 1].x > GAP_MS) points.push({ x: raw[i - 1].x + 1, y: null });
+      points.push(p);
+    });
+
     // A linear scale has no natural tick range from a single x value (or a
     // single repeated date). Chart.js falls back to an arbitrary auto-range
     // and produces nonsense date labels. Pin a small explicit window around
     // the lone point(s) instead.
-    const xs = points.map((p) => p.x);
+    const xs = raw.map((p) => p.x);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const DAY = 86400000;
     const xRange = minX === maxX ? { min: minX - 3 * DAY, max: maxX + 3 * DAY } : { min: undefined, max: undefined };
@@ -178,17 +191,39 @@
 
     const tooltipLabel = (item) => metric === 'bmi' ? `BMI ${item.parsed.y} · ${bmiCategory(item.parsed.y)}` : `${item.parsed.y} ${unit}`;
 
+    // Points stay visible however long the history gets. Hiding them past an
+    // arbitrary count removes the only cue that these are discrete weigh-ins
+    // rather than a continuous measurement, so shrink them instead.
+    const dotSize = raw.length > 120 ? 1.5 : raw.length > 40 ? 2 : 3;
+
+    // A goal line is worth far more on the chart than in a stat card: it turns
+    // the trend into a distance. Drawn as a flat two-point dataset rather than
+    // pulling in the annotation plugin for one dashed line.
+    const goalY = (metric === 'weight' && opts.goalKg != null)
+      ? Math.round(toDisplayWeight(opts.goalKg, unit) * 10) / 10 : null;
+    const goalData = goalY == null ? [] : [{ x: minX, y: goalY }, { x: maxX, y: goalY }];
+    const goalColor = readCssColor('--text-tertiary') || '#7d7a6d';
+
     if (chartInstance) {
       const ds = chartInstance.data.datasets[0];
       ds.data = points;
       ds.borderColor = accent;
       ds.backgroundColor = gradient;
-      ds.pointRadius = points.length > 40 ? 0 : 3;
+      ds.pointRadius = dotSize;
       ds.pointBackgroundColor = accent;
       ds.pointBorderColor = accent;
+      const gd = chartInstance.data.datasets[1];
+      gd.data = goalData;
+      gd.borderColor = goalColor;
       chartInstance.options.scales.x.min = xRange.min;
       chartInstance.options.scales.x.max = xRange.max;
-      chartInstance.options.plugins.tooltip.callbacks.label = tooltipLabel;
+      chartInstance.options.plugins.tooltip.callbacks.label = (item) => item.datasetIndex === 1 ? null : tooltipLabel(item);
+      // Re-measure before drawing. The canvas is frequently laid out after
+      // the chart is constructed (a route render, a rotation, an install
+      // opening at a different size), and without this the whole series is
+      // squeezed into whatever width the canvas had at construction time:
+      // measured at 200px of an available 842px on a real 73-entry history.
+      chartInstance.resize();
       chartInstance.update('none'); // 'none' = no animation, so rapid toggle taps switch instantly instead of re-animating in
       return chartInstance;
     }
@@ -202,11 +237,22 @@
           backgroundColor: gradient,
           fill: true,
           tension: 0.3,
-          pointRadius: points.length > 40 ? 0 : 3,
+          pointRadius: dotSize,
           pointHoverRadius: 5,
           pointBackgroundColor: accent,
           pointBorderColor: accent,
           borderWidth: 2,
+          spanGaps: false,   // honour the nulls inserted for long gaps
+        }, {
+          // goal line
+          data: goalData,
+          borderColor: goalColor,
+          borderDash: [5, 4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: false,
+          tension: 0,
         }],
       },
       options: {
@@ -236,7 +282,8 @@
           tooltip: {
             callbacks: {
               title: (items) => new Date(items[0].parsed.x).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
-              label: tooltipLabel,
+              // the flat goal series has no per-point meaning in the tooltip
+              label: (item) => item.datasetIndex === 1 ? null : tooltipLabel(item),
             },
           },
         },
@@ -246,23 +293,27 @@
   }
 
   // Normalizes ANY valid CSS color (hex, oklch(), named, ...) to rgba() at the
-  // given alpha, via a canvas fillStyle round-trip. Canvas 2D is spec-required
-  // to accept all CSS Color 4 syntaxes and always reads fillStyle back as a
-  // plain #hex/rgb()/rgba() string, regardless of how the color was authored.
+  // given alpha by painting one pixel and reading it back.
+  //
+  // This used to read ctx.fillStyle back as a string on the assumption that
+  // canvas always returns a plain #hex/rgb() form. That is no longer true:
+  // current Chrome round-trips "oklch(76% 0.19 55)" unchanged, so the rgb()
+  // regex never matched and every gradient silently fell back to a
+  // hardcoded colour. Reading the painted pixel cannot drift that way,
+  // because the browser has to rasterise it to RGBA whatever the input
+  // syntax.
   let normalizeCtx = null;
   function hexToRgba(cssColor, alpha) {
-    if (!normalizeCtx) normalizeCtx = document.createElement('canvas').getContext('2d');
-    normalizeCtx.fillStyle = '#000'; // reset so an invalid input below is detectable
-    normalizeCtx.fillStyle = cssColor;
-    const normalized = normalizeCtx.fillStyle; // '#rrggbb' or 'rgba(...)'
-    let r, g, b;
-    if (normalized.startsWith('#')) {
-      const bigint = parseInt(normalized.slice(1), 16);
-      r = (bigint >> 16) & 255; g = (bigint >> 8) & 255; b = bigint & 255;
-    } else {
-      const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(normalized);
-      [r, g, b] = m ? [+m[1], +m[2], +m[3]] : [124, 232, 140];
+    if (!normalizeCtx) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 1;
+      normalizeCtx = c.getContext('2d', { willReadFrequently: true });
     }
+    normalizeCtx.clearRect(0, 0, 1, 1);
+    normalizeCtx.fillStyle = '#000';
+    normalizeCtx.fillStyle = cssColor;   // ignored if the syntax is unsupported
+    normalizeCtx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = normalizeCtx.getImageData(0, 0, 1, 1).data;
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 

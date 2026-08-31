@@ -9,7 +9,7 @@
   // the only way to tell from inside the app whether an update actually
   // landed. It was previously hardcoded to 1.0.0 and never changed, which
   // made it useless for exactly that purpose.
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.5.0';
 
 
   const ROUTES = ['dashboard', 'log', 'gallery', 'settings'];
@@ -26,6 +26,8 @@
   async function renderRoute() {
     const route = currentRoute();
     tabItems.forEach((a) => a.classList.toggle('is-active', a.dataset.route === route));
+    // Only the dashboard is a fit-to-screen view; the rest are lists.
+    viewRoot.classList.toggle('view-root--fit', route === 'dashboard');
     try {
       if (route === 'dashboard') await FatterUI.renderDashboard(viewRoot);
       else if (route === 'log') await FatterUI.renderLog(viewRoot);
@@ -56,6 +58,17 @@
     if (themeColorMeta) themeColorMeta.setAttribute('content', isDark ? '#0d0d0d' : '#fcfcfc');
     const statusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
     if (statusBarMeta) statusBarMeta.setAttribute('content', isDark ? 'black-translucent' : 'default');
+  }
+
+  // WebKit ignores user-scalable=no, so pinch-zoom has to be refused at the
+  // gesture level. Double-tap zoom is handled by touch-action in the CSS.
+  function blockZoomGestures() {
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    }
+    // Safari also zooms on a two-finger pinch reported as a wheel event with
+    // ctrlKey set, which trackpads and some touch keyboards emit.
+    document.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
   }
 
   // ---------------- Offline indicator ----------------
@@ -127,6 +140,7 @@
     const settings = await FatterDB.getSettings();
     applyTheme(settings.theme);
 
+    blockZoomGestures();
     FatterUI.initGlobalHandlers();
     window.addEventListener('hashchange', renderRoute);
     window.addEventListener('online', updateOfflinePill);

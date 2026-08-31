@@ -14,11 +14,11 @@ const zlib = require('zlib');
 
 const OUT_DIR = path.join(__dirname, '..', 'icons');
 
-// From the design handoff (oklch(16% 0 0) surface / oklch(72% .14 155) accent),
+// From the design handoff (oklch(16% 0 0) surface / oklch(76% .19 55) accent),
 // converted to sRGB (see the conversion in PLAN notes). Keep in sync with the
 // --surface / --accent tokens in css/style.css.
 const BG = [0x0d, 0x0d, 0x0d];
-const ACCENT = [0x4e, 0xbe, 0x7d];
+const ACCENT = [0xff, 0x89, 0x00];
 
 function crc32(buf) {
   let c;
@@ -147,11 +147,12 @@ writeIcon('apple-touch-icon-180.png', 180);
 writeIcon('favicon-32.png', 32);
 writeIcon('favicon-16.png', 16);
 
-// Vector favicon (crisp at any size): same mark, monochrome stroke as
-// specified for the smallest sizes in the design (favicon 16/32 → mono).
+// Vector favicon (crisp at any size): same mark, accent stroke so the
+// browser-tab icon reads as the same brand mark as the installed app icon
+// and the in-app header logo (all three draw from --accent).
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect width="32" height="32" rx="7" fill="#0d0d0d"/>
-  <path d="M9,27.5 L9,17.5 L14.5,17.5 L14.5,9 L25,9" fill="none" stroke="#e6e6e6" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M9,27.5 L9,17.5 L14.5,17.5 L14.5,9 L25,9" fill="none" stroke="#ff8900" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 fs.writeFileSync(path.join(OUT_DIR, 'favicon.svg'), svg);
 console.log('  wrote icons/favicon.svg');

@@ -3,3 +3,4 @@ node_modules/
 *.log
 _test-photos/
 icons/logo.png
+_seed.json
