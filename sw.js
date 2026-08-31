@@ -18,7 +18,7 @@
 // without a bump, and existing installs kept running the pre-fix code the
 // entire time. Bump this EVERY time any precached file changes, no
 // exceptions, even for a "small" fix.)
-const CACHE_VERSION = 'fatter-v10';
+const CACHE_VERSION = 'fatter-v11';
 
 const PRECACHE_URLS = [
   './',

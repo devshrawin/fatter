@@ -125,6 +125,90 @@
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
 
+  const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+  // ---------------- Canvas plugins: BMI bands + goal label ----------------
+  //
+  // Both read their state off chart.$fatter rather than closing over the
+  // render arguments, because renderChart updates the SAME chart instance in
+  // place on every toggle tap. A plugin that captured `metric` at construction
+  // time would keep drawing BMI bands after a switch back to Weight.
+
+  // Health categories, not brand colours: the whole point of the banding is
+  // that a reader already knows green-to-red here. Kept at low alpha so they
+  // sit behind the data rather than competing with it.
+  const BMI_BAND_FILLS = [
+    { max: 18.5, label: 'Underweight', base: 'oklch(70% 0.13 250)' },
+    { max: 25, label: 'Normal', base: 'oklch(70% 0.15 150)' },
+    { max: 30, label: 'Overweight', base: 'oklch(75% 0.15 75)' },
+    { max: Infinity, label: 'Obese', base: 'oklch(65% 0.19 25)' },
+  ];
+
+  const bmiBandsPlugin = {
+    id: 'fatterBmiBands',
+    beforeDatasetsDraw(chart) {
+      const st = chart.$fatter;
+      if (!st || st.metric !== 'bmi') return;
+      const y = chart.scales.y, { left, right } = chart.chartArea;
+      const ctx = chart.ctx;
+      ctx.save();
+      let lower = -Infinity;
+      for (const band of BMI_BAND_FILLS) {
+        // Clip each band to the visible y range; most charts only ever show
+        // one or two categories, and drawing off-area rects leaks over the
+        // axis labels.
+        const top = y.getPixelForValue(Math.min(band.max, y.max));
+        const bottom = y.getPixelForValue(Math.max(lower, y.min));
+        lower = band.max;
+        if (bottom <= top) continue;
+        ctx.fillStyle = hexToRgba(band.base, 0.07);
+        ctx.fillRect(left, top, right - left, bottom - top);
+        if (bottom - top > 16) {
+          ctx.fillStyle = hexToRgba(band.base, 0.7);
+          ctx.font = '600 10px ' + FONT_STACK;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillText(band.label, right - 6, top + 4);
+        }
+      }
+      ctx.restore();
+    },
+  };
+
+  const goalLabelPlugin = {
+    id: 'fatterGoalLabel',
+    afterDatasetsDraw(chart) {
+      const st = chart.$fatter;
+      if (!st || st.goalY == null) return;
+      const y = chart.scales.y;
+      if (st.goalY < y.min || st.goalY > y.max) return; // off-chart, no orphan chip
+      const ctx = chart.ctx, { left, right } = chart.chartArea;
+      const text = `${st.goalY} ${st.unit} goal`;
+      ctx.save();
+      ctx.font = '600 10px ' + FONT_STACK;
+      const w = ctx.measureText(text).width + 12;
+      const h = 16;
+      // Anchor to whichever end of the line is FURTHER from the goal, which
+      // is the end with empty space under it. Pinned to the right, the chip
+      // landed directly on the last few weigh-ins of a loss history, since
+      // that is exactly where the line converges on the goal.
+      const nearLeft = Math.abs(st.firstY - st.goalY) < Math.abs(st.lastY - st.goalY);
+      const x = nearLeft ? right - w : left;
+      const lineY = y.getPixelForValue(st.goalY);
+      // Sit above the line, unless that would clip the top of the plot.
+      const boxY = lineY - h - 4 < chart.chartArea.top ? lineY + 4 : lineY - h - 4;
+      ctx.fillStyle = st.chipBg;
+      ctx.beginPath();
+      ctx.roundRect(x, boxY, w, h, 8);
+      ctx.fill();
+      ctx.fillStyle = st.chipText;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, boxY + h / 2 + 0.5);
+      ctx.restore();
+    },
+  };
+
   // opts.metric: 'weight' (default) | 'bmi'. opts.heightCm required for 'bmi'.
   //
   // Updates the existing Chart instance in place (chart.update('none')) when
@@ -216,19 +300,6 @@
     };
   }
 
-  // Trailing average over a real time window (not a fixed number of points),
-  // so a week with four weigh-ins and a week with one are weighted by date
-  // rather than by how often the user happened to step on the scale.
-  function trailingAverage(pts, windowDays) {
-    const win = windowDays * DAY_MS;
-    let head = 0, sum = 0;
-    return pts.map((p, i) => {
-      sum += p.y;
-      while (pts[head].x < p.x - win) { sum -= pts[head].y; head++; }
-      return { x: p.x, y: Math.round((sum / (i - head + 1)) * 10) / 10 };
-    });
-  }
-
   // Inserts a null wherever consecutive points are more than gapMs apart, so
   // the line breaks instead of drawing straight through a period with no
   // measurements at all (which reads as steady progress that was never
@@ -290,21 +361,13 @@
     const xMin = single ? minX - 3 * DAY_MS : minX;
     const xMax = single ? maxX + 3 * DAY_MS : maxX;
 
-    // Over a long history, connecting 70-odd weigh-ins directly draws every
-    // day-to-day fluctuation (water weight, time of day, what you ate) at the
-    // same visual weight as the actual trend, and dense clusters collapse
-    // into blobs. Past a quarter of history, the smoothed trend becomes the
-    // line and the real measurements become a lighter scatter behind it, so
-    // both the direction and the individual readings stay legible. Short
-    // ranges keep the plain connected line: a 7-day average over a 7-day
-    // window is a flat line that says nothing.
-    const useTrend = spanDays > 75 && raw.length >= 12;
-    const trendWindow = spanDays > 400 ? 21 : 10;
-
+    // One plain line through the actual weigh-ins, at every range. A smoothed
+    // trailing average with the raw readings faded to a scatter behind it was
+    // tried and removed: it reads as washed out, and it puts a derived number
+    // where the user expects the weight they actually recorded. The line is
+    // the measurements, nothing else.
     const GAP_MS = (opts.gapDays || 21) * DAY_MS;
-    const lineSource = useTrend ? trailingAverage(raw, trendWindow) : raw;
-    const linePoints = breakGaps(lineSource, GAP_MS);
-    const scatterPoints = useTrend ? raw : [];
+    const linePoints = breakGaps(raw, GAP_MS);
 
     // The area fill is dropped whenever the series has real gaps in it. Fill
     // drops to the axis floor at every break, so a history with a few months
@@ -332,29 +395,20 @@
     const tickFormat = makeTickFormatter(tickUnit, tickValues);
 
     const datasets = [
-      { // 0: trend (or the plain series on short ranges)
+      { // 0: the weigh-ins
         data: linePoints,
         borderColor: accent,
         backgroundColor: gradient,
         fill: hasGaps ? false : 'origin',
-        tension: 0.35,
-        pointRadius: useTrend ? 0 : dotSize,
-        pointHoverRadius: useTrend ? 0 : 5,
+        tension: 0.3,
+        pointRadius: dotSize,
+        pointHoverRadius: 5,
         pointBackgroundColor: accent,
         pointBorderColor: accent,
-        borderWidth: useTrend ? 2.5 : 2,
+        borderWidth: 2,
         spanGaps: false,
       },
-      { // 1: raw weigh-ins behind the trend
-        data: scatterPoints,
-        showLine: false,
-        pointRadius: Math.min(dotSize, 2),
-        pointHoverRadius: 5,
-        pointBackgroundColor: hexToRgba(accent, 0.32),
-        pointBorderColor: 'transparent',
-        pointBorderWidth: 0,
-      },
-      { // 2: goal line
+      { // 1: goal line
         data: goalData,
         borderColor: goalColor,
         borderDash: [6, 5],
@@ -366,19 +420,24 @@
       },
     ];
 
-    // The trend line is a derived value, so pointing at it and reading off a
-    // weight the user never recorded would be a lie. Only the raw series (or
-    // the plain line, which IS the raw series) answers the tooltip.
     const tooltipCallbacks = {
       title: (items) => new Date(items[0].parsed.x).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
-      label: (item) => {
-        if (item.datasetIndex === 2) return null;
-        if (useTrend && item.datasetIndex === 0) return null;
-        return tooltipLabel(item);
-      },
+      // the flat goal series has no per-point meaning in the tooltip
+      label: (item) => (item.datasetIndex === 1 ? null : tooltipLabel(item)),
+    };
+
+    const pluginState = {
+      metric,
+      goalY,
+      unit,
+      firstY: raw[0].y,
+      lastY: raw[raw.length - 1].y,
+      chipBg: readCssColor('--surface-raised') || '#2b2b2b',
+      chipText: readCssColor('--text-secondary') || '#a8a596',
     };
 
     if (chartInstance) {
+      chartInstance.$fatter = pluginState;
       datasets.forEach((d, i) => Object.assign(chartInstance.data.datasets[i], d));
       const x = chartInstance.options.scales.x;
       x.min = xMin; x.max = xMax;
@@ -391,13 +450,26 @@
       // squeezed into whatever width the canvas had at construction time:
       // measured at 200px of an available 842px on a real 73-entry history.
       chartInstance.resize();
-      chartInstance.update('none'); // 'none' = no animation, so rapid toggle taps switch instantly instead of re-animating in
+      // Animation is switched off permanently after construction rather than
+      // passing update('none'), so only the first draw animates in and every
+      // toggle tap after that is instant.
+      //
+      // update('none') is NOT equivalent here and was a real bug: with mode
+      // 'none' Chart.js skips the transition that positions elements, so when
+      // the point COUNT changes between renders the newly added elements keep
+      // stale geometry. Every range switch (7d -> All) and every add/delete
+      // changes the count, and the line rendered as a sawtooth of old and new
+      // positions mixed together while the underlying data was perfectly
+      // sorted. A full update() with animation disabled re-lays out everything.
+      chartInstance.options.animation = false;
+      chartInstance.update();
       return chartInstance;
     }
 
     chartInstance = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { datasets },
+      plugins: [bmiBandsPlugin, goalLabelPlugin],
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -445,6 +517,7 @@
         },
       },
     });
+    chartInstance.$fatter = pluginState;
     return chartInstance;
   }
 

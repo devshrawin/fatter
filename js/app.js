@@ -9,7 +9,7 @@
   // the only way to tell from inside the app whether an update actually
   // landed. It was previously hardcoded to 1.0.0 and never changed, which
   // made it useless for exactly that purpose.
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.0';
 
 
   const ROUTES = ['dashboard', 'log', 'gallery', 'settings'];
